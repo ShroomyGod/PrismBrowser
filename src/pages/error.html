@@ -1,0 +1,61 @@
+<!doctype html>
+<html data-theme="dark">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="/assets/icon-32.png">
+<link rel="stylesheet" href="/common.css">
+<title>Error - Prism</title>
+</head>
+<body>
+<div class="wrap" style="max-width:640px">
+  <div class="page-head">
+    <img class="logo-mini" src="/assets/icon-64.png" alt="">
+    <h1 id="head">This page could not be loaded</h1>
+  </div>
+  <div class="card">
+    <div style="word-break:break-all;font-size:14px" id="url"></div>
+    <div class="muted" style="margin-top:10px" id="detail"></div>
+  </div>
+  <div class="card">
+    <div class="row">
+      <button class="primary" id="retry">Try again</button>
+      <button id="http" style="display:none">Load plain HTTP</button>
+      <button id="newtab">New tab</button>
+    </div>
+    <div class="muted" style="margin-top:12px" id="hint"></div>
+  </div>
+</div>
+<script>
+(async function () {
+  const p = new URLSearchParams(location.search);
+  const code = p.get('code') || '';
+  const desc = p.get('desc') || '';
+  const url = p.get('url') || '';
+  const isCrash = code === 'crash';
+  const hadHttp = p.get('http') === '1';
+
+  document.title = isCrash ? 'Page crashed - Prism' : 'Error - Prism';
+  document.getElementById('head').textContent = isCrash ? 'The page stopped responding' : 'This page could not be loaded';
+  document.getElementById('url').textContent = url || (isCrash ? 'Renderer process crashed.' : 'Unknown address');
+  document.getElementById('detail').textContent =
+    (desc ? desc : 'No further detail was reported.') + (code && !isCrash ? '  (code ' + code + ')' : '');
+
+  // HTTPS-first only falls back to plain HTTP when the upgrade itself failed.
+  const httpBtn = document.getElementById('http');
+  if (hadHttp && /^https:\/\//i.test(url)) {
+    httpBtn.style.display = '';
+    httpBtn.addEventListener('click', () => { location.href = 'http://' + url.replace(/^https:\/\//i, ''); });
+  }
+
+  document.getElementById('hint').textContent = hadHttp
+    ? 'Prism tried HTTPS first and the site did not answer. Plain HTTP is unencrypted.'
+    : 'Check the address for typos. If the site works in another browser, the connection may be blocked on this network.';
+
+  document.getElementById('retry').addEventListener('click', () => {
+    if (url) location.href = url; else location.reload();
+  });
+  document.getElementById('newtab').addEventListener('click', () => { location.href = 'prism://newtab'; });
+})();
+</script>
+</body>
+</html>

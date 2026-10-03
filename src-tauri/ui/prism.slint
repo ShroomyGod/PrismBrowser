@@ -1,0 +1,151 @@
+import { Button, LineEdit, VerticalBox } from "std-widgets.slint";
+
+export global BrowserState {
+    in-out property <[string]> tabs: ["New Tab"];
+    in-out property <int> active-tab: 0;
+    in-out property <string> address: "";
+    in-out property <string> title: "Prism";
+    in-out property <image> web-content;
+    in-out property <bool> can-back: false;
+    in-out property <bool> can-forward: false;
+    in-out property <bool> loading: false;
+    callback navigate(string);
+    callback back();
+    callback forward();
+    callback reload();
+    callback new-tab();
+    callback close-tab(int);
+    callback select-tab(int);
+    callback search(string);
+    callback settings();
+    callback extensions();
+    callback web-pointer-event(PointerEvent, float, float);
+    callback web-scroll(float, float, float, float);
+    callback web-key-event(KeyEvent, bool);
+}
+
+export component PrismBrowser inherits Window {
+    title: "Prism Browser";
+    width: 1200px;
+    height: 820px;
+    min-width: 760px;
+    min-height: 520px;
+    background: #101018;
+
+    callback title-changed(string);
+    changed BrowserState.title => { title-changed(BrowserState.title); }
+
+    VerticalBox {
+        spacing: 0px;
+
+        Rectangle {
+            height: 42px;
+            background: #171722;
+            HorizontalLayout {
+                spacing: 4px;
+                padding-left: 10px;
+                padding-right: 10px;
+                Image {
+                    source: @image-url("../../assets/icon-32.png");
+                    width: 22px;
+                    height: 22px;
+                    vertical-alignment: center;
+                }
+                for (tab, index) in BrowserState.tabs: Rectangle {
+                    width: 180px;
+                    height: 34px;
+                    y: 8px;
+                    border-radius: 8px 8px 0px 0px;
+                    background: index == BrowserState.active-tab ? #252538 : #1c1c28;
+                    HorizontalLayout {
+                        Text {
+                            text: tab;
+                            color: index == BrowserState.active-tab ? #f4f0ff : #aaa6b8;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            left: 10px;
+                        }
+                        TouchArea {
+                            width: 24px;
+                            clicked => { BrowserState.close-tab(index); }
+                            Text { text: "×"; color: #b8b4c2; horizontal-alignment: center; vertical-alignment: center; }
+                        }
+                    }
+                    TouchArea {
+                        x: 0px; y: 0px; width: parent.width - 25px; height: parent.height;
+                        clicked => { BrowserState.select-tab(index); }
+                    }
+                }
+                Button { text: "+"; width: 34px; clicked => { BrowserState.new-tab(); } }
+                Rectangle { width: 1px; }
+                Button { text: "⚙"; width: 38px; clicked => { BrowserState.settings(); } }
+                Button { text: "◇"; width: 38px; clicked => { BrowserState.extensions(); } }
+            }
+        }
+
+        Rectangle {
+            height: 54px;
+            background: #20202c;
+            HorizontalLayout {
+                spacing: 6px;
+                padding-left: 10px;
+                padding-right: 10px;
+                Button { text: "‹"; enabled: BrowserState.can-back; clicked => { BrowserState.back(); } }
+                Button { text: "›"; enabled: BrowserState.can-forward; clicked => { BrowserState.forward(); } }
+                Button { text: BrowserState.loading ? "×" : "↻"; clicked => { BrowserState.reload(); } }
+                LineEdit {
+                    text <=> BrowserState.address;
+                    placeholder-text: "Search Prism or enter address";
+                    accepted(text) => { BrowserState.navigate(text); }
+                }
+                Button { text: "Go"; clicked => { BrowserState.navigate(BrowserState.address); } }
+            }
+        }
+
+        Rectangle {
+            height: 1px;
+            background: #383442;
+        }
+
+        Rectangle {
+            vertical-stretch: 1;
+            clip: true;
+            background: #101018;
+            TouchArea {
+                width: 100%;
+                height: 100%;
+                Image {
+                    source: BrowserState.web-content;
+                    width: 100%;
+                    height: 100%;
+                }
+                pointer-event(event) => {
+                    BrowserState.web-pointer-event(event, self.mouse-x, self.mouse-y);
+                }
+                scroll-event(event) => {
+                    BrowserState.web-scroll(self.mouse-x, self.mouse-y, event.delta-x, event.delta-y);
+                    return accept;
+                }
+            }
+        }
+
+        Rectangle {
+            height: 24px;
+            background: #171722;
+            Text {
+                text: "Prism  ·  Servo web engine";
+                color: #aaa6b8;
+                font-size: 11px;
+                vertical-alignment: center;
+                x: 12px;
+            }
+        }
+    }
+
+    FocusScope {
+        width: 0px;
+        height: 0px;
+        key-pressed(event) => { BrowserState.web-key-event(event, true); accept }
+        key-released(event) => { BrowserState.web-key-event(event, false); accept }
+    }
+}

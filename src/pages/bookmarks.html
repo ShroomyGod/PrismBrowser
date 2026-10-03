@@ -1,0 +1,83 @@
+<!doctype html>
+<html data-theme="dark">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="/assets/icon-32.png">
+<link rel="stylesheet" href="/common.css">
+<title>Bookmarks - Prism</title>
+</head>
+<body>
+<div class="wrap">
+  <div class="topnav">
+    <a href="/newtab">New Tab</a>
+    <a href="/history">History</a>
+    <a href="/bookmarks" class="on">Bookmarks</a>
+    <a href="/downloads">Downloads</a>
+    <a href="/settings">Settings</a>
+    <a href="/privacy">Privacy</a>
+  </div>
+  <div class="page-head">
+    <img class="logo-mini" src="/assets/icon-64.png" alt="">
+    <h1>Bookmarks</h1>
+  </div>
+  <div class="card" style="padding:6px 10px">
+    <table class="list"><tbody id="rows"></tbody></table>
+  </div>
+  <div class="empty" id="empty" style="display:none">
+    No bookmarks yet. Press <span class="kbd">Ctrl</span> + <span class="kbd">D</span>
+    or click the star to save a page.
+  </div>
+</div>
+<script src="/common.js"></script>
+<script>
+(async function () {
+  await PrismUI.boot();
+  const rows = document.getElementById('rows');
+  const empty = document.getElementById('empty');
+
+  async function load() {
+    let list = [];
+    try { list = (await window.prism.bookmarksList()) || []; }
+    catch (_) { list = []; }
+    rows.textContent = '';
+    empty.style.display = list.length ? 'none' : '';
+    for (const item of list) {
+      const tr = document.createElement('tr');
+
+      const cell = document.createElement('td');
+      const a = document.createElement('a');
+      a.href = '#';
+      a.textContent = item.title || item.url;
+      a.addEventListener('click', (e) => { e.preventDefault(); location.href = item.url; });
+      const host = document.createElement('div');
+      host.className = 'muted';
+      host.textContent = PrismUI.hostname(item.url);
+      cell.append(a, host);
+      tr.append(cell);
+
+      const when = document.createElement('td');
+      when.className = 'muted';
+      when.style.whiteSpace = 'nowrap';
+      when.textContent = PrismUI.fmtTime(item.added);
+      tr.append(when);
+
+      const act = document.createElement('td');
+      act.style.textAlign = 'right';
+      const del = document.createElement('button');
+      del.className = 'small';
+      del.textContent = 'Remove';
+      del.addEventListener('click', async () => {
+        try { await window.prism.bookmarksRemove(item.id); } catch (_) {}
+        load();
+      });
+      act.append(del);
+      tr.append(act);
+
+      rows.append(tr);
+    }
+  }
+  load();
+})();
+</script>
+</body>
+</html>

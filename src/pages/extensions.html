@@ -1,0 +1,124 @@
+<!doctype html>
+<html data-theme="dark">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="/assets/icon-32.png">
+<link rel="stylesheet" href="/common.css">
+<title>Extensions - Prism</title>
+</head>
+<body>
+<div class="wrap">
+  <div class="topnav">
+    <a href="/newtab">New Tab</a>
+    <a href="/history">History</a>
+    <a href="/bookmarks">Bookmarks</a>
+    <a href="/downloads">Downloads</a>
+    <a href="/extensions" class="on">Extensions</a>
+    <a href="/settings">Settings</a>
+  </div>
+  <div class="page-head">
+    <img class="logo-mini" src="/assets/icon-64.png" alt="">
+    <h1>Extensions</h1>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">Add an extension</h2>
+    <div class="row" style="flex-wrap:wrap">
+      <input id="input" type="text" placeholder="Paste a Chrome Web Store or Edge Add-ons URL, or a 32-character ID" style="flex:1;min-width:260px">
+      <button id="chrome" class="primary">Install from Chrome Web Store</button>
+      <button id="edge">Install from Edge Add-ons</button>
+      <button id="unpacked">Load unpacked</button>
+    </div>
+    <div class="muted" style="margin-top:10px" id="note">
+      Electron supports a large MV2/MV3 subset. Toolbar popups are the main gap, so
+      extensions that rely on them will not surface a button in the toolbar.
+    </div>
+  </div>
+
+  <div class="card" style="padding:6px 10px">
+    <table class="list"><tbody id="rows"></tbody></table>
+  </div>
+  <div class="empty" id="empty" style="display:none">No extensions installed.</div>
+</div>
+<script src="/common.js"></script>
+<script>
+(async function () {
+  await PrismUI.boot();
+  const rows = document.getElementById('rows');
+  const empty = document.getElementById('empty');
+  const note = document.getElementById('note');
+
+  async function load() {
+    let list = [];
+    try { list = (await window.prism.extensionsList()) || []; }
+    catch (_) { list = []; }
+    rows.textContent = '';
+    empty.style.display = list.length ? 'none' : '';
+    for (const item of list) {
+      const tr = document.createElement('tr');
+
+      const cell = document.createElement('td');
+      const name = document.createElement('div');
+      name.textContent = item.name || item.id;
+      const meta = document.createElement('div');
+      meta.className = 'muted';
+      meta.textContent = [item.version, item.source].filter(Boolean).join('  ');
+      cell.append(name, meta);
+      tr.append(cell);
+
+      const state = document.createElement('td');
+      const b = document.createElement('span');
+      b.className = item.active ? 'badge green' : 'badge';
+      b.textContent = item.active ? 'active' : 'inactive';
+      state.append(b);
+      tr.append(state);
+
+      const act = document.createElement('td');
+      act.style.textAlign = 'right';
+      const reload = document.createElement('button');
+      reload.className = 'small';
+      reload.textContent = 'Reload';
+      reload.addEventListener('click', async () => {
+        try { await window.prism.extensionsReload(item.id); } catch (e) { note.textContent = 'Reload failed: ' + (e && e.message || e); }
+        load();
+      });
+      const del = document.createElement('button');
+      del.className = 'small danger';
+      del.textContent = 'Remove';
+      del.addEventListener('click', async () => {
+        try { await window.prism.extensionsRemove(item.id); } catch (_) {}
+        load();
+      });
+      act.append(reload, del);
+      tr.append(act);
+
+      rows.append(tr);
+    }
+  }
+
+  async function install(source) {
+    const input = document.getElementById('input').value.trim();
+    if (!input) return;
+    note.textContent = 'Downloading and unpacking...';
+    const res = await window.prism.extensionsInstall(source, input);
+    if (res && res.error) { note.textContent = 'Install failed: ' + res.error; return; }
+    note.textContent = 'Installed. Reload the browser if it does not appear yet.';
+    document.getElementById('input').value = '';
+    load();
+  }
+
+  document.getElementById('chrome').addEventListener('click', () => install('chrome'));
+  document.getElementById('edge').addEventListener('click', () => install('edge'));
+  document.getElementById('unpacked').addEventListener('click', async () => {
+    const res = await window.prism.extensionsLoadUnpacked();
+    if (res && res.error) note.textContent = 'Could not load: ' + res.error;
+    else if (res && res.canceled) return;
+    load();
+  });
+
+  window.prism.onExtensionsChanged(load);
+  load();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,192 @@
+<!doctype html>
+<html data-theme="dark">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="/assets/icon-32.png">
+<link rel="stylesheet" href="/common.css">
+<title>Settings - Prism</title>
+</head>
+<body>
+<div class="wrap">
+  <div class="topnav">
+    <a href="/newtab">New Tab</a>
+    <a href="/history">History</a>
+    <a href="/bookmarks">Bookmarks</a>
+    <a href="/downloads">Downloads</a>
+    <a href="/privacy">Privacy</a>
+    <a href="/settings" class="on">Settings</a>
+  </div>
+  <div class="page-head">
+    <img class="logo-mini" src="/assets/icon-64.png" alt="">
+    <h1>Settings</h1>
+  </div>
+
+  <h3>Appearance</h3>
+  <div class="card">
+    <div class="setting-line">
+      <div class="info"><b>Theme</b><div class="muted">Applies to the browser chrome and internal pages.</div></div>
+      <select id="theme">
+        <option value="dark">Dark</option>
+        <option value="light">Light</option>
+        <option value="system">Follow system</option>
+      </select>
+    </div>
+    <div id="line-bookmarksbar"></div>
+    <div class="setting-line">
+      <div class="info"><b>Site theme</b><div class="muted">Never recolors page content. Auto only follows the browser on sites that opt in with a color-scheme declaration.</div></div>
+      <select id="siteTheme">
+        <option value="auto">Auto</option>
+        <option value="dark">Dark</option>
+        <option value="light">Light</option>
+        <option value="off">Off</option>
+      </select>
+    </div>
+  </div>
+
+  <h3>Privacy</h3>
+  <div class="card">
+    <div id="line-adblock"></div>
+    <div id="line-https"></div>
+    <div id="line-dnt"></div>
+  </div>
+
+  <h3>Security</h3>
+  <div class="card">
+    <div id="line-malware"></div>
+    <div id="line-scan"></div>
+  </div>
+
+  <h3>DNS</h3>
+  <div class="card">
+    <div class="setting-line">
+      <div class="info"><b>Secure DNS</b><div class="muted">DNS over HTTPS. Changing this takes effect after a restart.</div></div>
+      <select id="dnsMode">
+        <option value="automatic">Automatic</option>
+        <option value="custom">Custom</option>
+        <option value="off">Off</option>
+      </select>
+    </div>
+    <div class="setting-line">
+      <div class="info"><b>Provider</b></div>
+      <select id="dnsProvider">
+        <option value="cloudflare">Cloudflare</option>
+        <option value="google">Google</option>
+        <option value="quad9">Quad9</option>
+        <option value="custom">Custom</option>
+      </select>
+    </div>
+    <div class="setting-line">
+      <div class="info"><b>Custom template</b><div class="muted">Must contain <span class="kbd">{dns}</span>.</div></div>
+      <input id="dnsTemplate" type="text" placeholder="https://dns.example/dns-query" style="min-width:260px">
+    </div>
+    <div class="row"><button id="dnsRestart">Restart to apply DNS change</button></div>
+  </div>
+
+  <h3>Search</h3>
+  <div class="card">
+    <div class="setting-line">
+      <div class="info"><b>Default engine</b><div class="muted">Prism Search uses federated SearXNG plus your on-device index.</div></div>
+      <select id="engine"></select>
+    </div>
+    <div class="setting-line">
+      <div class="info"><b>Local SearXNG URL</b><div class="muted">Tried first. Leave blank to fall back to 127.0.0.1:8080.</div></div>
+      <input id="searxngUrl" type="text" placeholder="http://127.0.0.1:8080" style="min-width:220px">
+    </div>
+    <div class="setting-line">
+      <div class="info"><b>Extra instances</b><div class="muted">Comma-separated, checked before the built-in public fallback.</div></div>
+      <input id="searxngFallbacks" type="text" placeholder="https://a.example, https://b.example" style="min-width:220px">
+    </div>
+  </div>
+
+  <h3>About</h3>
+  <div class="card" id="about"><div class="muted">Loading...</div></div>
+</div>
+<script src="/common.js"></script>
+<script>
+(async function () {
+  let s = await PrismUI.boot();
+  if (!s) { document.body.insertAdjacentHTML('afterbegin', '<div class="wrap"><p>Could not read settings.</p></div>'); return; }
+  const $ = (id) => document.getElementById(id);
+
+  async function save(patch) {
+    s = (await window.prism.setSettings(patch)) || s;
+  }
+
+  // ---- appearance ----
+  $('theme').value = s.appearance.theme;
+  $('theme').addEventListener('change', () => save({ appearance: { theme: $('theme').value } }));
+  $('siteTheme').value = s.appearance.siteTheme || 'auto';
+  $('siteTheme').addEventListener('change', () => save({ appearance: { siteTheme: $('siteTheme').value } }));
+  const bb = PrismUI.switchRow('Bookmarks bar', 'Show the bookmarks strip under the toolbar.', s.appearance.bookmarksBar, (v) => save({ appearance: { bookmarksBar: v } }));
+  $('line-bookmarksbar').append(bb.line);
+
+  // ---- privacy ----
+  const ab = PrismUI.switchRow('Ad blocking', 'Filter ads and trackers on every page.', s.privacy.adblock.enabled, (v) => save({ privacy: { adblock: { enabled: v } } }));
+  $('line-adblock').append(ab.line);
+  const hf = PrismUI.switchRow('HTTPS-first', 'Try HTTPS before falling back to plain HTTP.', s.privacy.httpsFirst, (v) => save({ privacy: { httpsFirst: v } }));
+  $('line-https').append(hf.line);
+  const dnt = PrismUI.switchRow('Do Not Track', 'Send the DNT and Sec-GPC headers.', s.privacy.dnt, (v) => save({ privacy: { dnt: v } }));
+  $('line-dnt').append(dnt.line);
+
+  // ---- security ----
+  const mw = PrismUI.switchRow('Malware and phishing protection', 'Block known malicious sites.', s.security.malwareEnabled, (v) => save({ security: { malwareEnabled: v } }));
+  $('line-malware').append(mw.line);
+  const ds = PrismUI.switchRow('Scan downloads', 'Hash finished downloads and quarantine threats.', s.security.downloadScan, (v) => save({ security: { downloadScan: v } }));
+  $('line-scan').append(ds.line);
+
+  // ---- dns ----
+  $('dnsMode').value = s.dns.secureDns;
+  $('dnsProvider').value = s.dns.provider;
+  $('dnsTemplate').value = s.dns.customTemplate || '';
+  $('dnsMode').addEventListener('change', () => save({ dns: { secureDns: $('dnsMode').value } }));
+  $('dnsProvider').addEventListener('change', () => save({ dns: { provider: $('dnsProvider').value } }));
+  $('dnsTemplate').addEventListener('change', () => save({ dns: { customTemplate: $('dnsTemplate').value.trim() } }));
+  $('dnsRestart').addEventListener('click', async () => { await window.prism.relaunch(); });
+
+  // ---- search ----
+  const eng = $('engine');
+  for (const e of (s.engines || [])) {
+    const o = document.createElement('option');
+    o.value = e.id; o.textContent = e.name + (e.builtin ? '' : ' (custom)');
+    eng.append(o);
+  }
+  eng.value = s.search.defaultEngine;
+  eng.addEventListener('change', () => save({ search: { defaultEngine: eng.value } }));
+  $('searxngUrl').value = s.search.searxngUrl || '';
+  $('searxngUrl').addEventListener('change', () => save({ search: { searxngUrl: $('searxngUrl').value.trim() } }));
+  $('searxngFallbacks').value = s.search.searxngFallbacks || '';
+  $('searxngFallbacks').addEventListener('change', () => save({ search: { searxngFallbacks: $('searxngFallbacks').value.trim() } }));
+
+  // ---- about ----
+  (async function about() {
+    let v = null;
+    try { v = await window.prism.versions(); } catch (_) {}
+    const box = $('about');
+    box.textContent = '';
+    const rows = [
+      ['Prism', v ? v.app : 'unknown'],
+      ['Electron', v ? v.electron : 'unknown'],
+      ['Chromium', v ? v.chrome : 'unknown'],
+      ['Node', v ? v.node : 'unknown']
+    ];
+    for (const [label, value] of rows) {
+      const line = document.createElement('div');
+      line.className = 'setting-line';
+      const info = document.createElement('div');
+      info.className = 'info';
+      const b = document.createElement('b');
+      b.textContent = label;
+      info.append(b);
+      const m = document.createElement('div');
+      m.className = 'muted';
+      m.textContent = value;
+      line.append(info, m);
+      box.append(line);
+    }
+  })();
+
+  if (location.hash === '#about') $('about').scrollIntoView();
+})();
+</script>
+</body>
+</html>

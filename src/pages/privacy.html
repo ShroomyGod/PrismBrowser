@@ -1,0 +1,152 @@
+<!doctype html>
+<html data-theme="dark">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="/assets/icon-32.png">
+<link rel="stylesheet" href="/common.css">
+<title>Privacy - Prism</title>
+</head>
+<body>
+<div class="wrap">
+  <div class="topnav">
+    <a href="/newtab">New Tab</a>
+    <a href="/history">History</a>
+    <a href="/bookmarks">Bookmarks</a>
+    <a href="/privacy" class="on">Privacy</a>
+    <a href="/settings">Settings</a>
+  </div>
+  <div class="page-head">
+    <img class="logo-mini" src="/assets/icon-64.png" alt="">
+    <h1>Privacy</h1>
+  </div>
+
+  <h3>Protection</h3>
+  <div class="card" id="protection"><div class="muted">Loading...</div></div>
+
+  <h3>Encrypted storage</h3>
+  <div class="card" id="storage"><div class="muted">Loading...</div></div>
+
+  <h3>On-device index</h3>
+  <div class="card" id="index"><div class="muted">Loading...</div></div>
+
+  <h3>Blocklists</h3>
+  <div class="card">
+    <div class="row between">
+      <div class="muted">
+        Ad-block and malware feeds are fetched from the network and cached on disk.
+        Refreshing contacts the upstream providers.
+      </div>
+      <button id="update">Update lists</button>
+    </div>
+    <div class="muted" id="updateNote" style="margin-top:8px"></div>
+  </div>
+
+  <h3>Clear browsing data</h3>
+  <div class="card">
+    <div id="toggles"></div>
+    <div class="row" style="margin-top:14px">
+      <button id="clear" class="danger">Clear selected data</button>
+      <span class="muted">This cannot be undone.</span>
+    </div>
+  </div>
+</div>
+<script src="/common.js"></script>
+<script>
+(async function () {
+  await PrismUI.boot();
+
+  const FIELDS = [
+    ['history', 'Browsing history'],
+    ['downloads', 'Download list'],
+    ['passwords', 'Saved passwords'],
+    ['cookies', 'Cookies'],
+    ['siteData', 'Site storage (localStorage, IndexedDB, caches)'],
+    ['cache', 'Cached files']
+  ];
+
+  function fill(id, pairs) {
+    const box = document.getElementById(id);
+    box.textContent = '';
+    for (const [label, value] of pairs) {
+      const line = document.createElement('div');
+      line.className = 'setting-line';
+      const info = document.createElement('div');
+      info.className = 'info';
+      const b = document.createElement('b');
+      b.textContent = label;
+      const m = document.createElement('div');
+      m.className = 'muted';
+      m.textContent = value;
+      info.append(b, m);
+      line.append(info);
+      box.append(line);
+    }
+  }
+
+  function num(v) { return (v == null ? 0 : v).toLocaleString(); }
+
+  async function load() {
+    let s = null;
+    try { s = await window.prism.privacyStats(); } catch (_) {}
+    if (!s) { document.getElementById('protection').textContent = 'Could not read protection stats.'; return; }
+
+    const ab = s.adblock || {};
+    const sec = s.security || {};
+    fill('protection', [
+      ['Ad blocking', 'Enabled: ' + (ab.enabled ? 'yes' : 'no') + '  |  rules loaded: ' + num(ab.rulesBlocked || ab.rules)],
+      ['Threat blocking', 'Blocked so far: ' + num(sec.navBlocked || sec.blocked)],
+      ['HTTPS-first', s.dns && s.dns.activeTemplate ? 'DNS over HTTPS: ' + s.dns.activeTemplate : 'DNS over HTTPS: off'],
+      ['Downloads scanned', sec.downloadsBlocked != null ? String(sec.downloadsBlocked) : 'on request']
+    ]);
+
+    const st = s.storage || {};
+    fill('storage', [
+      ['Keyring', st.keyring || 'unknown'],
+      ['Encryption', st.encrypted ? 'AES-256-GCM at rest' : 'unavailable - data may not be encrypted']
+    ]);
+
+    const ix = s.search || {};
+    fill('index', [
+      ['Pages indexed', num(ix.docs)],
+      ['Sites', num(ix.hosts)],
+      ['Terms', num(ix.terms)],
+      ['Last crawl', PrismUI.fmtTime(ix.lastCrawl) || 'never'],
+      ['History entries', num((s.history || {}).entries || (s.history || {}).total)]
+    ]);
+  }
+
+  const toggles = document.getElementById('toggles');
+  const inputs = {};
+  for (const [key, label] of FIELDS) {
+    const { line, input } = PrismUI.switchRow(label, '', false, () => {});
+    input.addEventListener('change', () => {});
+    inputs[key] = input;
+    toggles.append(line);
+  }
+  // Default to the safe combination people usually want.
+  for (const k of ['history', 'downloads', 'cache', 'cookies', 'siteData']) inputs[k].checked = true;
+
+  document.getElementById('update').addEventListener('click', async () => {
+    const note = document.getElementById('updateNote');
+    note.textContent = 'Updating...';
+    try {
+      const r = await window.prism.listsUpdate();
+      note.textContent = 'Updated' + (r && r.adblock != null ? ' (' + r.adblock + ' ad rules, ' + (r.security) + ' malware entries)' : '') + '.';
+    } catch (e) { note.textContent = 'Update failed: ' + (e && e.message || e); }
+    load();
+  });
+
+  document.getElementById('clear').addEventListener('click', async () => {
+    const opts = {};
+    for (const k of Object.keys(inputs)) opts[k] = inputs[k].checked;
+    if (!Object.values(opts).some(Boolean)) return;
+    if (!confirm('Clear the selected browsing data? This cannot be undone.')) return;
+    try { await window.prism.clearData(opts); } catch (_) {}
+    load();
+  });
+
+  load();
+})();
+</script>
+</body>
+</html>

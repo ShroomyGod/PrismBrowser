@@ -1,0 +1,93 @@
+<!doctype html>
+<html data-theme="dark">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="/assets/icon-32.png">
+<link rel="stylesheet" href="/common.css">
+<title>History - Prism</title>
+</head>
+<body>
+<div class="wrap">
+  <div class="topnav">
+    <a href="/newtab">New Tab</a>
+    <a href="/history" class="on">History</a>
+    <a href="/bookmarks">Bookmarks</a>
+    <a href="/downloads">Downloads</a>
+    <a href="/settings">Settings</a>
+    <a href="/privacy">Privacy</a>
+  </div>
+  <div class="page-head">
+    <img class="logo-mini" src="/assets/icon-64.png" alt="">
+    <h1>History</h1>
+  </div>
+  <div class="row" style="margin-bottom:16px">
+    <input id="q" type="search" placeholder="Search history" style="flex:1">
+    <button id="clear" class="danger">Clear all</button>
+  </div>
+  <div class="card" style="padding:6px 10px">
+    <table class="list"><tbody id="rows"></tbody></table>
+  </div>
+  <div class="empty" id="empty" style="display:none">No history yet.</div>
+</div>
+<script src="/common.js"></script>
+<script>
+(async function () {
+  await PrismUI.boot();
+  const rows = document.getElementById('rows');
+  const empty = document.getElementById('empty');
+  const q = document.getElementById('q');
+
+  async function load() {
+    let list = [];
+    try { list = (await window.prism.historyList(q.value.trim(), 200)) || []; }
+    catch (_) { list = []; }
+    rows.textContent = '';
+    empty.style.display = list.length ? 'none' : '';
+    for (const item of list) {
+      const tr = document.createElement('tr');
+
+      const link = document.createElement('td');
+      const a = document.createElement('a');
+      a.href = '#';
+      a.textContent = item.title || item.url;
+      a.addEventListener('click', (e) => { e.preventDefault(); location.href = item.url; });
+      const host = document.createElement('div');
+      host.className = 'muted';
+      host.textContent = PrismUI.hostname(item.url);
+      link.append(a, host);
+      tr.append(link);
+
+      const when = document.createElement('td');
+      when.className = 'muted';
+      when.style.whiteSpace = 'nowrap';
+      when.textContent = PrismUI.fmtTime(item.time);
+      tr.append(when);
+
+      const act = document.createElement('td');
+      act.style.textAlign = 'right';
+      const del = document.createElement('button');
+      del.className = 'small';
+      del.textContent = 'Remove';
+      del.addEventListener('click', async () => {
+        try { await window.prism.historyDelete(item.url); } catch (_) {}
+        load();
+      });
+      act.append(del);
+      tr.append(act);
+
+      rows.append(tr);
+    }
+  }
+
+  let t;
+  q.addEventListener('input', () => { clearTimeout(t); t = setTimeout(load, 140); });
+  document.getElementById('clear').addEventListener('click', async () => {
+    if (!confirm('Delete all browsing history? This cannot be undone.')) return;
+    try { await window.prism.historyClear(); } catch (_) {}
+    load();
+  });
+  load();
+})();
+</script>
+</body>
+</html>

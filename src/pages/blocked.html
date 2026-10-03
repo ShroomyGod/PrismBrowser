@@ -1,0 +1,49 @@
+<!doctype html>
+<html data-theme="dark">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="/assets/icon-32.png">
+<link rel="stylesheet" href="/common.css">
+<title>Blocked - Prism</title>
+</head>
+<body>
+<div class="wrap" style="max-width:640px">
+  <div class="page-head">
+    <img class="logo-mini" src="/assets/icon-64.png" alt="">
+    <h1>Site blocked</h1>
+  </div>
+  <div class="card">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+      <span class="badge red">malware / phishing</span>
+      <span class="muted" id="src"></span>
+    </div>
+    <div style="font-size:15px;word-break:break-all" id="url"></div>
+    <div class="muted" style="margin-top:8px" id="threat"></div>
+  </div>
+  <div class="card">
+    <div class="muted" style="margin-bottom:12px">
+      This address appears on a community threat feed. Prism blocks it by default.
+      If you are confident the listing is wrong, open it in your normal browser instead.
+    </div>
+    <div class="row">
+      <button class="primary" id="back">Back to safety</button>
+      <button id="open">Open in default browser</button>
+    </div>
+  </div>
+</div>
+<script>
+(async function () {
+  const p = new URLSearchParams(location.search);
+  const u = p.get('u') || '';
+  const src = p.get('src') || '';
+  const threat = p.get('threat') || '';
+  document.getElementById('url').textContent = u;
+  document.getElementById('src').textContent = src;
+  document.getElementById('threat').textContent = threat ? threat : 'Listed as malicious.';
+  document.title = 'Blocked - Prism';
+  document.getElementById('back').addEventListener('click', () => { location.href = 'prism://newtab'; });
+  document.getElementById('open').addEventListener('click', () => { if (u) window.prism.openExternal(u); });
+})();
+</script>
+</body>
+</html>

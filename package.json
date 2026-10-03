@@ -1,0 +1,76 @@
+{
+  "name": "prism-browser",
+  "productName": "Prism",
+  "version": "1.0.2",
+  "description": "Prism: a privacy-focused desktop web browser.",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "cargo run --manifest-path src-tauri/Cargo.toml",
+    "icons": "node scripts/process-logo.js",
+    "release": "node scripts/release.js",
+    "test": "node test/search-web.test.js",
+    "build": "cargo build --release --manifest-path src-tauri/Cargo.toml",
+    "build:legacy": "electron-builder --win",
+    "build:dir:legacy": "electron-builder --win --dir",
+    "dist:legacy": "electron-builder --win nsis portable"
+  },
+  "author": "Prism",
+  "license": "MIT",
+  "devDependencies": {
+    "pngjs": "^7.0.0"
+  },
+  "build": {
+    "appId": "com.prism.browser",
+    "productName": "Prism",
+    "copyright": "Copyright (c) 2026 Prism",
+    "directories": {
+      "output": "./",
+      "buildResources": "assets"
+    },
+    "files": [
+      "src/**/*",
+      "assets/icon-*.png",
+      "package.json",
+      "assets/prism.ico",
+      "assets/prism-logo.png"
+    ],
+    "win": {
+      "icon": "assets/prism.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Prism-${version}-${arch}.${ext}",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Prism",
+      "deleteAppDataOnUninstall": false
+    },
+    "portable": {
+      "artifactName": "Prism-${version}-portable.${ext}"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "shroomygod",
+      "repo": "PrismBrowser",
+      "releaseType": "release"
+    }
+  }
+}

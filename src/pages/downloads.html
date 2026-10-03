@@ -1,0 +1,111 @@
+<!doctype html>
+<html data-theme="dark">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="/assets/icon-32.png">
+<link rel="stylesheet" href="/common.css">
+<title>Downloads - Prism</title>
+</head>
+<body>
+<div class="wrap">
+  <div class="topnav">
+    <a href="/newtab">New Tab</a>
+    <a href="/history">History</a>
+    <a href="/bookmarks">Bookmarks</a>
+    <a href="/downloads" class="on">Downloads</a>
+    <a href="/settings">Settings</a>
+    <a href="/privacy">Privacy</a>
+  </div>
+  <div class="page-head">
+    <img class="logo-mini" src="/assets/icon-64.png" alt="">
+    <h1>Downloads</h1>
+  </div>
+  <div class="card" style="padding:6px 10px">
+    <table class="list"><tbody id="rows"></tbody></table>
+  </div>
+  <div class="empty" id="empty" style="display:none">No downloads yet.</div>
+</div>
+<script src="/common.js"></script>
+<script>
+(async function () {
+  await PrismUI.boot();
+  const rows = document.getElementById('rows');
+  const empty = document.getElementById('empty');
+
+  function stateBadge(item) {
+    const b = document.createElement('span');
+    const raw = String(item.state || item.status || 'completed').toLowerCase();
+    if (raw.includes('progress') || raw.includes('active')) b.className = 'badge';
+    else if (raw.includes('interrupt') || raw.includes('fail') || raw.includes('cancel')) b.className = 'badge red';
+    else b.className = 'badge green';
+    b.textContent = raw;
+    return b;
+  }
+
+  function sizeLabel(item) {
+    const total = item.totalBytes != null ? item.totalBytes : item.size;
+    if (!total) return '';
+    const got = item.receivedBytes != null ? item.receivedBytes : item.bytes;
+    if (got != null && got < total) {
+      return PrismUI.fmtBytes(got) + ' of ' + PrismUI.fmtBytes(total);
+    }
+    return PrismUI.fmtBytes(total);
+  }
+
+  async function load() {
+    let list = [];
+    try { list = (await window.prism.downloadsList()) || []; }
+    catch (_) { list = []; }
+    rows.textContent = '';
+    empty.style.display = list.length ? 'none' : '';
+    for (const item of list) {
+      const tr = document.createElement('tr');
+
+      const cell = document.createElement('td');
+      const name = document.createElement('div');
+      name.textContent = item.filename || item.name || item.url || 'download';
+      const sub = document.createElement('div');
+      sub.className = 'muted';
+      const bits = [sizeLabel(item), PrismUI.fmtTime(item.ts || item.startedAt)].filter(Boolean);
+      sub.textContent = bits.join('  ');
+      cell.append(name, sub);
+      tr.append(cell);
+
+      const flag = document.createElement('td');
+      if (item.threat) {
+        const t = document.createElement('span');
+        t.className = 'badge red';
+        t.textContent = 'blocked';
+        flag.append(t);
+      } else {
+        flag.append(stateBadge(item));
+      }
+      tr.append(flag);
+
+      const act = document.createElement('td');
+      act.style.textAlign = 'right';
+      act.style.whiteSpace = 'nowrap';
+      if (item.path) {
+        const open = document.createElement('button');
+        open.className = 'small';
+        open.textContent = 'Open';
+        open.addEventListener('click', () => window.prism.downloadsOpen(item.path, false));
+        const reveal = document.createElement('button');
+        reveal.className = 'small';
+        reveal.textContent = 'Show';
+        reveal.addEventListener('click', () => window.prism.downloadsOpen(item.path, true));
+        act.append(open, reveal);
+      }
+      tr.append(act);
+
+      rows.append(tr);
+    }
+  }
+
+  document.getElementById('empty').textContent = 'No downloads yet.';
+  window.prism.onDownloadsChanged(load);
+  load();
+})();
+</script>
+</body>
+</html>

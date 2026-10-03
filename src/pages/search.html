@@ -1,0 +1,72 @@
+<!doctype html>
+<html data-theme="dark">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="/assets/icon-32.png">
+<link rel="stylesheet" href="/common.css">
+<title>Prism Browser Search</title>
+<style>
+  .hdr { display: flex; align-items: center; gap: 18px; padding: 16px 24px 14px; border-bottom: 1px solid var(--line); background: var(--bg2); position: sticky; top: 0; z-index: 5; }
+  .hdr .logo { display: flex; align-items: center; gap: 10px; cursor: pointer; flex: none; }
+  .hdr .logo img { width: 30px; height: 30px; border-radius: 8px; }
+  .hdr .logo .n { font-weight: 700; font-size: 15px; white-space: nowrap; }
+  .hdr .logo .n span { color: var(--accent); }
+
+  /* Search box + suggestion dropdown. The dropdown is a sibling positioned
+     under the box, so it can overlay results without affecting layout. */
+  .sbox-wrap { position: relative; flex: 1; max-width: 620px; }
+  .sbox { display: flex; align-items: center; background: var(--bg); border: 1px solid var(--line); border-radius: 20px; padding: 9px 16px; gap: 9px; }
+  .sbox:focus-within { border-color: var(--accent); }
+  .sbox input { flex: 1; background: none; border: none; color: var(--text); font-size: 14px; user-select: text; min-width: 0; }
+  .sbox input:focus { outline: none; }
+  .sbox .go { background: none; border: none; color: var(--dim); cursor: pointer; display: flex; padding: 0; }
+  .sbox .go:hover { color: var(--text); }
+  #sugs {
+    position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 20;
+    background: var(--bg2); border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: 0 10px 34px var(--shadow); overflow: hidden; display: none;
+  }
+  #sugs .sug { padding: 8px 16px; font-size: 13px; color: var(--text); cursor: pointer; }
+  #sugs .sug.sel, #sugs .sug:hover { background: var(--accent-soft); }
+
+  .meta { padding: 12px 24px 0; color: var(--dim); font-size: 12.5px; display: flex; gap: 14px; flex-wrap: wrap; align-items: center; min-height: 20px; }
+  .results { max-width: 720px; margin: 0 auto; padding: 12px 24px 80px; }
+  .result { margin-bottom: 24px; }
+  .result .u { color: var(--dim); font-size: 12px; margin-bottom: 3px; display: flex; align-items: center; gap: 7px; }
+  .result .t { font-size: 17px; font-weight: 550; color: var(--accent); line-height: 1.35; display: inline-block; }
+  .result .t:hover { text-decoration: underline; }
+  .result .s { margin-top: 4px; color: var(--dim); font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
+  .result .s b { color: var(--text); font-weight: 600; background: var(--accent-soft); border-radius: 3px; padding: 0 2px; }
+  .other-engines { margin: 6px 0 22px; padding: 12px 16px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .other-engines button { font-size: 12px; padding: 5px 12px; border-radius: 14px; }
+  .pager { display: flex; gap: 8px; justify-content: center; margin: 28px 0; }
+  .build-cta { text-align: center; padding: 56px 20px; }
+  .build-cta img { width: 88px; height: 88px; border-radius: 20px; opacity: .9; }
+  .build-cta h2 { font-size: 19px; margin: 18px 0 8px; }
+  .build-cta .muted { max-width: 520px; margin: 0 auto 4px; line-height: 1.6; }
+</style>
+</head>
+<body>
+  <div class="hdr">
+    <div class="logo" id="logo" title="Prism Browser Search home">
+      <img src="/assets/icon-64.png" alt="">
+      <div class="n">Prism <span>Browser</span></div>
+    </div>
+    <div class="sbox-wrap">
+      <form class="sbox" id="sform" autocomplete="off">
+        <svg viewBox="0 0 16 16" width="15" height="15"><circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg>
+        <input id="q" type="text" autocomplete="off" spellcheck="false"
+               placeholder="Search the web, privately">
+        <button class="go" type="submit" title="Search">
+          <svg viewBox="0 0 16 16" width="14" height="14"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+        </button>
+      </form>
+      <div id="sugs" style="display:none"></div>
+    </div>
+  </div>
+  <div class="meta" id="meta"></div>
+  <div class="results" id="results"></div>
+<script src="/common.js"></script>
+<script src="/search.js"></script>
+</body>
+</html>

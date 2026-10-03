@@ -1,0 +1,26 @@
+[workspace]
+resolver = "3"
+
+[package]
+name = "prism-browser"
+version = "1.0.2"
+edition = "2024"
+license = "MIT"
+description = "Prism: a privacy-focused desktop browser powered by Servo."
+
+[dependencies]
+servo = { version = "0.6.0", features = ["default_web_features"] }
+eframe = { version = "0.34.3", default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
+egui = "0.34.3"
+image = { version = "0.25.8", default-features = false, features = ["png"] }
+euclid = "0.22.11"
+url = "2.5.7"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+log = "0.4.32"
+env_logger = "0.11.8"
+winit = "0.30.13"
+rustls = { version = "0.23.34", default-features = false, features = ["ring"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+servo = { version = "0.6.0", features = ["default", "default_web_features", "no-wgl"] }
