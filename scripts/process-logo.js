@@ -2,16 +2,26 @@
 // Windows .ico. The artwork is centered and scaled to preserve its aspect
 // ratio at every icon size.
 //
-// The source is a white-background render (assets/PrismLogo-raw.png), so
-// knockWhiteBackground() cuts that matte away before anything is measured or
-// scaled. Without it the white canvas counts as artwork, nothing gets cropped,
-// and every icon ships as a white square that reads as a blank tile on the
-// dark chrome.
+// Two sources feed this script:
+//   assets/sourceimage.png  the gradient star -> icon-<size>.png, prism.ico
+//   assets/sourcetext.png   the "Prism" letters -> wordmark.png, wordmark@2x.png
+//
+// Both arrive as flat-background renders, so each matte has to be cut away
+// before anything is measured or scaled. Without that the canvas counts as
+// artwork, nothing gets cropped, and every icon ships as a blank tile.
+//
+// The two mattes use different rules on purpose. The icon is saturated
+// throughout, so knockWhiteBackground()'s brightness floor is safe on it. The
+// wordmark gradient runs through pale yellow and pink that are nearly as
+// bright as a white canvas, so a brightness floor would punch holes straight
+// through the lettering; it instead measures the canvas colour from the
+// image's own border via knockEdgeMatte().
 const fs = require('fs');
 const path = require('path');
 const { PNG } = require('pngjs');
 
-const SRC = path.join(__dirname, '..', 'assets', 'PrismLogo-raw.png');
+const SRC = path.join(__dirname, '..', 'assets', 'sourceimage.png');
+const WORDMARK_SRC = path.join(__dirname, '..', 'assets', 'sourcetext.png');
 const OUT = path.join(__dirname, '..', 'assets');
 
 // Everything the artwork does not cover must show the browser's own chrome
@@ -47,6 +57,93 @@ function knockWhiteBackground(png) {
     data[i + 3] = alpha;
   }
   return png;
+}
+
+// ---------------------------------------------------------------------------
+// Wordmark: "Prism" gradient lettering
+// ---------------------------------------------------------------------------
+// The wordmark arrives with a flat background of unknown colour -- the source
+// is literally named "on Black" even when it renders on white -- so the canvas
+// is measured instead of assumed. knockEdgeMatte() takes the per-channel median
+// of the image's own border ring and clears everything within a tolerance of it.
+//
+// Measuring beats a hard-coded white threshold here for two reasons. It works
+// on a dark background as readily as a light one. And it cannot punch holes in
+// the lettering: the pale yellow and pink stops sit within a few counts of
+// white, so any brightness-based rule would eat straight through them, while
+// every gradient stop is far from a flat canvas colour.
+const MATTE_TOLERANCE = 64;
+
+function knockEdgeMatte(png) {
+  const { width, height, data } = png;
+  // Sample the outermost ring, opaque pixels only. Transparent pixels carry
+  // meaningless colour, so including them would bias the estimate toward zero
+  // and make a dark canvas look like black.
+  const ring = [];
+  const consider = (i) => { if (data[i * 4 + 3] > 200) ring.push(i); };
+  for (let x = 0; x < width; x++) { consider(x); consider(x + (height - 1) * width); }
+  for (let y = 0; y < height; y++) { consider(y * width); consider(y * width + width - 1); }
+  // Already-transparent artwork (or a transparent border) has no canvas to find.
+  if (ring.length < 16) return png;
+
+  const median = (offset) => {
+    const values = ring.map((i) => data[i * 4 + offset]).sort((a, b) => a - b);
+    return values[Math.floor(values.length / 2)];
+  };
+  const cr = median(0), cg = median(1), cb = median(2);
+  const tol2 = MATTE_TOLERANCE * MATTE_TOLERANCE;
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i + 3] === 0) continue;
+    const dr = data[i] - cr, dg = data[i + 1] - cg, db = data[i + 2] - cb;
+    if (dr * dr + dg * dg + db * db <= tol2) data[i + 3] = 0;
+  }
+  return png;
+}
+
+// Area-average resample to an exact size. The wordmark is a wide banner whose
+// strokes are thin, and it gets downscaled several times over on the way to a
+// 480px-wide render. Box-filtering the entire source footprint is what stops
+// those strokes from aliasing into dashes. Colors are premultiplied before
+// averaging and un-premultiplied after, so the cleared canvas cannot bleed
+// into the glyph edges.
+function scaleExact(srcPng, tw, th) {
+  const { width: w, height: h, data } = srcPng;
+  const out = new PNG({ width: tw, height: th });
+  out.data.fill(0);
+  for (let y = 0; y < th; y++) {
+    const y0 = Math.floor((y * h) / th);
+    const y1 = Math.max(y0 + 1, Math.floor(((y + 1) * h) / th));
+    for (let x = 0; x < tw; x++) {
+      const x0 = Math.floor((x * w) / tw);
+      const x1 = Math.max(x0 + 1, Math.floor(((x + 1) * w) / tw));
+      let r = 0, g = 0, b = 0, a = 0, n = 0;
+      for (let sy = y0; sy < y1; sy++) {
+        for (let sx = x0; sx < x1; sx++) {
+          const i = (sy * w + sx) * 4;
+          const al = data[i + 3] / 255;
+          r += data[i] * al; g += data[i + 1] * al; b += data[i + 2] * al;
+          a += al; n++;
+        }
+      }
+      const o = (y * tw + x) * 4;
+      if (a > 0) {
+        out.data[o] = Math.round(r / a);
+        out.data[o + 1] = Math.round(g / a);
+        out.data[o + 2] = Math.round(b / a);
+        out.data[o + 3] = Math.round((a / n) * 255);
+      }
+    }
+  }
+  return out;
+}
+
+// Tight-crop, then fit to an exact width. Width is the binding constraint
+// here: resize() pads toward a square, which would shrink a ~3:1 banner down
+// to almost nothing.
+function makeWordmark(png, targetW) {
+  const cropped = cropArtwork(png);
+  const targetH = Math.max(1, Math.round((cropped.height * targetW) / cropped.width));
+  return scaleExact(cropped, targetW, targetH);
 }
 
 function artworkBounds(png) {
@@ -169,6 +266,12 @@ function writeIco(entries, file) {
 }
 
 if (require.main === module) {
+  // Name the missing file rather than letting readFileSync throw a bare ENOENT.
+  // This has already bitten once: the sources arrived under different names.
+  if (!fs.existsSync(SRC)) {
+    console.error('Missing icon source: ' + SRC);
+    process.exit(1);
+  }
   const raw = knockWhiteBackground(PNG.sync.read(fs.readFileSync(SRC)));
   const artwork = cropArtwork(raw);
   const square = makeSquare(raw);
@@ -181,7 +284,27 @@ if (require.main === module) {
   }
   writePng(artwork, path.join(OUT, 'prism-logo.png'));
   writeIco(entries, path.join(OUT, 'prism.ico'));
+
+  // The wordmark is optional and must never be fatal. The icons above are
+  // already on disk by this point and are what the installer actually needs;
+  // a wordmark that will not process is a cosmetic miss, not a broken build.
+  if (fs.existsSync(WORDMARK_SRC)) {
+    try {
+      const mark = knockEdgeMatte(PNG.sync.read(fs.readFileSync(WORDMARK_SRC)));
+      writePng(makeWordmark(mark, 480), path.join(OUT, 'wordmark.png'));
+      writePng(makeWordmark(mark, 960), path.join(OUT, 'wordmark@2x.png'));
+      console.log('Prism wordmark written (480w + 960w).');
+    } catch (err) {
+      console.warn('Wordmark skipped: ' + err.message);
+    }
+  } else {
+    console.log('No wordmark source at ' + WORDMARK_SRC + ' - skipped, icons unaffected.');
+  }
+
   console.log('Prism logos and icons written to', OUT);
 }
 
-module.exports = { makeFavicon, resize, makeSquare, artworkBounds, knockWhiteBackground, writeIco };
+module.exports = {
+  makeFavicon, resize, makeSquare, artworkBounds, knockWhiteBackground,
+  knockEdgeMatte, scaleExact, makeWordmark, cropArtwork, writeIco,
+};

@@ -1,7 +1,7 @@
 {
   "name": "prism-browser",
   "productName": "Prism",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Prism: a privacy-focused desktop web browser.",
   "main": "src/main/main.js",
   "scripts": {
@@ -32,7 +32,9 @@
       "assets/icon-*.png",
       "package.json",
       "assets/prism.ico",
-      "assets/prism-logo.png"
+      "assets/prism-logo.png",
+      "assets/wordmark.png",
+      "assets/wordmark@2x.png"
     ],
     "win": {
       "icon": "assets/prism.ico",
@@ -65,11 +67,7 @@
     },
     "portable": {
       "artifactName": "Prism-${version}-portable.${ext}"
-    },
-    "publish": {
-      "provider": "github",
-      "owner": "shroomygod",
-      "repo": "PrismBrowser",
+    },"publish": {"provider": "github","owner":"shroomygod","repo":"PrismBrowser",
       "releaseType": "release"
     }
   }

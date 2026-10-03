@@ -209,6 +209,16 @@ class TabsManager {
     // floating above it — same as clicking away in any browser.
     wc.on('focus', () => { this._sendToShell(tab.winId, 'prism:page-focused'); });
 
+    // Chrome-style right-click menu. showPageContextMenu() has existed in
+    // menus.js all along, but nothing ever bound it to this event, so
+    // right-click did nothing on pages and images could not be saved.
+    // preventDefault() matters: with a listener attached Chromium stays silent
+    // until we build a template, so it is required for OUR menu to appear.
+    wc.on('context-menu', (e, params) => {
+      e.preventDefault();
+      require('./menus').showPageContextMenu(wc, params, this);
+    });
+
     wc.on('did-start-loading', () => { tab.loading = true; this._broadcast(this.windows.get(tab.winId)); });
     wc.on('did-stop-loading', () => { tab.loading = false; this._broadcast(this.windows.get(tab.winId)); this._sendOmnibox(tab); });
     wc.on('did-navigate', (_e, url) => {

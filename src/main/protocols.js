@@ -56,7 +56,10 @@ function handlePrism(request) {
     // App assets: prism://assets/icon-32.png
     if (pathname.startsWith('/assets/')) {
       const rel = pathname.slice('/assets/'.length);
-      if (!/^[\w.-]+(\.png|\.ico|\.svg)$/.test(rel)) return new Response('Forbidden', { status: 403 });
+      // '@' must be allowed: wordmark@2x.png is a 2x asset and \w does not
+      // include it, which 403'd the wordmark on every internal page. Traversal
+      // is unaffected -- safeJoin() below normalizes and re-checks the root.
+      if (!/^[\w.@-]+(\.png|\.ico|\.svg)$/.test(rel)) return new Response('Forbidden', { status: 403 });
       const abs = safeJoin(ASSETS_ROOT, rel);
       return abs ? serveFile(abs) : new Response('Not found', { status: 404 });
     }

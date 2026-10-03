@@ -8,9 +8,7 @@
 <style>
   .hdr { display: flex; align-items: center; gap: 18px; padding: 16px 24px 14px; border-bottom: 1px solid var(--line); background: var(--bg2); position: sticky; top: 0; z-index: 5; }
   .hdr .logo { display: flex; align-items: center; gap: 10px; cursor: pointer; flex: none; }
-  .hdr .logo img { width: 30px; height: 30px; border-radius: 8px; }
-  .hdr .logo .n { font-weight: 700; font-size: 15px; white-space: nowrap; }
-  .hdr .logo .n span { color: var(--accent); }
+  .hdr .logo img { height: 22px; width: auto; border-radius: 0; }
 
   /* Search box + suggestion dropdown. The dropdown is a sibling positioned
      under the box, so it can overlay results without affecting layout. */
@@ -42,6 +40,7 @@
   .pager { display: flex; gap: 8px; justify-content: center; margin: 28px 0; }
   .build-cta { text-align: center; padding: 56px 20px; }
   .build-cta img { width: 88px; height: 88px; border-radius: 20px; opacity: .9; }
+  .build-cta img.wordmark { height: 46px; width: auto; border-radius: 0; opacity: 1; }
   .build-cta h2 { font-size: 19px; margin: 18px 0 8px; }
   .build-cta .muted { max-width: 520px; margin: 0 auto 4px; line-height: 1.6; }
 </style>
@@ -49,8 +48,7 @@
 <body>
   <div class="hdr">
     <div class="logo" id="logo" title="Prism Browser Search home">
-      <img src="/assets/icon-64.png" alt="">
-      <div class="n">Prism <span>Browser</span></div>
+      <img src="/assets/wordmark@2x.png" alt="Prism">
     </div>
     <div class="sbox-wrap">
       <form class="sbox" id="sform" autocomplete="off">

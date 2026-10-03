@@ -242,22 +242,22 @@ class Adblocker {
     return false;
   }
 
-  // Wire a session. Returns handler info for stats.
-  attach(session, tabsRegistry) {
-    const filter = { urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] };
-    session.webRequest.onBeforeRequest(filter, (details, callback) => {
-      const cfg = settings.all().privacy.adblock;
-      if (!cfg.enabled) return callback({});
-      const siteHost = tabsRegistry ? tabsRegistry(details.webContents) : '';
-      const perSite = cfg.perSite || {};
-      if (siteHost && perSite[siteHost] === 'allow') return callback({});
-      const type = details.resourceType === 'mainFrame' ? 'document' : details.resourceType;
-      if (this.match(details.url, type, siteHost)) {
-        this._onBlocked(details);
-        return callback({ cancel: true });
-      }
-      callback({});
-    });
+  // Decide whether a single request should be cancelled.
+  //
+  // This deliberately does NOT register its own webRequest listener. Electron
+  // keeps only the LAST onBeforeRequest listener registered per session, so
+  // registering here was silently overwritten by the malware shield that
+  // sessions.js registered next -- which is why nothing was ever blocked while
+  // the shield still fired. sessions.js now owns the one listener and asks us.
+  shouldBlock(details, siteHost) {
+    const cfg = settings.all().privacy.adblock;
+    if (!cfg.enabled) return false;
+    const perSite = cfg.perSite || {};
+    if (siteHost && perSite[siteHost] === 'allow') return false;
+    const type = details.resourceType === 'mainFrame' ? 'document' : details.resourceType;
+    if (!this.match(details.url, type, siteHost)) return false;
+    this._onBlocked(details);
+    return true;
   }
 
   _onBlocked(details) {

@@ -8,9 +8,7 @@
 <style>
   body { background: var(--bg); }
   .hero { display: flex; flex-direction: column; align-items: center; padding-top: 10vh; }
-  .hero img { width: 56px; height: 56px; border-radius: 14px; margin-bottom: 16px; }
-  .brand { font-size: 22px; font-weight: 600; letter-spacing: -.2px; margin-bottom: 6px; color: var(--text); }
-  .brand span { color: var(--text-dim); font-weight: 400; }
+  .hero .mark { width: 210px; max-width: 64vw; height: auto; margin-bottom: 20px; }
   .tagline { color: var(--dim); margin-bottom: 26px; font-size: 13px; max-width: 520px; text-align: center; line-height: 1.5; }
   .searchbox {
     display: flex; align-items: center; width: min(560px, 90%); gap: 10px;
@@ -38,8 +36,7 @@
 </head>
 <body>
 <div class="hero">
-  <img src="/assets/icon-128.png" alt="Prism">
-  <div class="brand">Prism <span>Browser</span></div>
+  <img class="mark" src="/assets/wordmark@2x.png" alt="Prism">
   <div class="tagline">A privacy-focused desktop browser.</div>
   <form class="searchbox" id="form">
     <svg viewBox="0 0 16 16" width="17" height="17"><circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg>

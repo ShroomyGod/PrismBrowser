@@ -239,7 +239,22 @@ generateIcons();
 verifyIconsTransparent();
 cleanStale();
 
-run('npx', ['electron-builder', '--win', 'nsis', 'portable']);
+// Publishing is what gives the auto-updater a feed to read, so it is on by
+// default -- but only when a token is actually available. Without one this stays
+// a purely local build. It is skipped, never failed, so offline builds still work.
+//
+// NOTE: --publish creates a GitHub Release per version. Re-running without
+// bumping "version" in package.json will fail, because the release already exists.
+const GH_TOKEN = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+const publishArgs = GH_TOKEN ? ['--publish', 'always'] : [];
+if (GH_TOKEN) {
+  console.log('\n  GITHUB_TOKEN found - artifacts will be published to GitHub Releases.\n');
+} else {
+  console.log('\n  no GITHUB_TOKEN set - building locally, skipping GitHub publish.');
+  console.log('  set it in this shell to publish:  $env:GITHUB_TOKEN = "ghp_..."\n');
+}
+
+run('npx', ['electron-builder', '--win', 'nsis', 'portable', ...publishArgs]);
 
 verifyArtifacts();
 verifyPackagedPages();

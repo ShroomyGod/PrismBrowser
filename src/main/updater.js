@@ -201,10 +201,30 @@ function load() {
   }
 }
 
-const PUBLISH = (() => {
-  try { return require('../package.json').build.publish || {}; }
-  catch (_) { return {}; }
-})();
+// electron-builder strips the `build` section out of the package.json it packs
+// into app.asar. So `require('../../package.json').build` is undefined in a
+// shipped build no matter how correct the path is, and reading the feed config
+// from package.json only ever works in a dev checkout. That is why the feed
+// read as unconfigured even with the path fixed.
+//
+// These constants are the shipped source of truth and must match build.publish
+// in package.json, which is what electron-builder publishes to. The dev-only
+// check below catches drift at development time instead of letting updates
+// quietly target the wrong repository once shipped.
+const PUBLISH = { owner: 'shroomygod', repo: 'PrismBrowser' };
+
+try {
+  if (!app.isPackaged) {
+    const pkg = require('../../package.json');
+    const declared = (pkg.build && pkg.build.publish) || {};
+    if (declared.owner && declared.repo &&
+        (declared.owner !== PUBLISH.owner || declared.repo !== PUBLISH.repo)) {
+      console.warn('[updater] build.publish is ' + declared.owner + '/' + declared.repo +
+        ' but updater.js ships ' + PUBLISH.owner + '/' + PUBLISH.repo +
+        ' - updates will target the wrong repository.');
+    }
+  }
+} catch (_) { /* dev-only drift check; never fatal */ }
 const REPO_CONFIGURED = !!PUBLISH.owner && !!PUBLISH.repo &&
   !String(PUBLISH.owner).toUpperCase().startsWith('YOUR');
 const RELEASE_API = 'https://api.github.com/repos/' +
@@ -220,7 +240,17 @@ async function remoteRelease() {
     headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'PrismBrowser-Updater' },
     signal: AbortSignal.timeout(10000)
   });
-  if (!res.ok) throw new Error('GitHub returned HTTP ' + res.status);
+  if (!res.ok) {
+    if (res.status === 404) {
+      // 404 covers two unrelated situations that a bare status cannot tell
+      // apart: a public repo with no release published yet, and a PRIVATE repo,
+      // whose releases GitHub hides from unauthenticated callers. This request
+      // sends no token, and never will -- a token baked into the app would ship
+      // to every user who installs it.
+      throw new Error('GitHub returned HTTP 404. Either no release has been published yet, or the repo is private - GitHub hides releases from unauthenticated requests, and this updater sends no token.');
+    }
+    throw new Error('GitHub returned HTTP ' + res.status);
+  }
   const data = await res.json();
   const assets = Array.isArray(data.assets) ? data.assets : [];
 
@@ -252,7 +282,13 @@ function check({ silent } = {}) {
     return Promise.resolve(status({ checking: false, available: true, downloaded: true, version: pendingVersion }));
   }
   if (!REPO_CONFIGURED) {
-    return Promise.resolve(status({ checking: false, error: 'No update feed configured. Set build.publish.owner and .repo in package.json.' }));
+    // Report what was actually read. A blank owner here means package.json was
+    // not found at all, which is a different bug from an unconfigured repo --
+    // without this the two are indistinguishable from the UI.
+    return Promise.resolve(status({ checking: false, error:
+      'No update feed configured (read owner=' + JSON.stringify(PUBLISH.owner || null) +
+      ', repo=' + JSON.stringify(PUBLISH.repo || null) +
+      '). Set build.publish.owner and .repo in package.json.' }));
   }
   push({ checking: true, error: null });
   return remoteRelease()

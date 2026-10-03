@@ -30,24 +30,33 @@ function setupPartitions(tabs) {
   const privSession = session.fromPartition('prism-private');
 
   for (const ses of [mainSession, privSession]) {
-    // Ad blocker
-    adblock.attach(ses, (wc) => tabs.siteHostForWebContents(wc));
+    // ONE onBeforeRequest listener per session, deliberately. Electron keeps
+    // only the last listener registered for an event, so the ad blocker and the
+    // malware shield must share this slot instead of each registering their own.
+    // When they raced, adblock.attach() lost and was silently replaced, which is
+    // why ads were never blocked while the shield still raised false positives.
+    ses.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] }, (details, callback) => {
+      const isMainFrame = details.resourceType === 'mainFrame';
+      const siteHost = tabs.siteHostForWebContents(details.webContents);
 
-    // Malware shield for top-level navigations (sync part; async Safe
-    // Browsing verdicts redirect to the block page once known).
-    ses.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*'] }, (details, callback) => {
-      if (details.resourceType !== 'mainFrame' || !settings.all().security.malwareEnabled) return callback({});
-      const host = (() => { try { return new URL(details.url).hostname.toLowerCase(); } catch (_) { return ''; } })();
-      if (security.exceptions.has(host)) return callback({});
-      if (security.hosts.has(host)) {
-        security.stats.navBlocked++;
-        if (security.onNavBlock) security.onNavBlock(details.webContents, details.url, {
-          source: 'community blocklists (URLhaus / Phishing Army / OpenPhish)', threat: 'Malicious site'
-        });
-        return callback({ cancel: true });
+      if (adblock.shouldBlock(details, siteHost)) return callback({ cancel: true });
+
+      // Malware shield for top-level navigations (sync part; async Safe
+      // Browsing verdicts redirect to the block page once known).
+      if (isMainFrame && settings.all().security.malwareEnabled) {
+        const host = (() => { try { return new URL(details.url).hostname.toLowerCase(); } catch (_) { return ''; } })();
+        if (host && !security.exceptions.has(host) && security.hosts.has(host)) {
+          security.stats.navBlocked++;
+          if (security.onNavBlock) security.onNavBlock(details.webContents, details.url, {
+            source: 'community blocklists (URLhaus / Phishing Army / OpenPhish)', threat: 'Malicious site'
+          });
+          return callback({ cancel: true });
+        }
       }
+
       callback({});
-      if (security.checkUrl && security.safeBrowsingKeyCheckPending !== true) {
+
+      if (isMainFrame && security.checkUrl && security.safeBrowsingKeyCheckPending !== true) {
         security.checkUrl(details.url).then((verdict) => {
           if (verdict && !details.webContents.isDestroyed()) {
             security.stats.navBlocked++;

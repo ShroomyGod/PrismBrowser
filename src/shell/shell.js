@@ -360,6 +360,11 @@ $('nav-forward').addEventListener('click', () => S.forward(WID));
 $('nav-reload').addEventListener('click', () => {
   if (state.active && state.active.loading) S.stop(WID); else S.reload(WID);
 });
+// Home navigates the CURRENT tab rather than opening a new one, which is what
+// every other browser does. prism://newtab is this app's start page.
+$('nav-home').addEventListener('click', () => {
+  if (state.active) S.navigate(state.active.id, 'prism://newtab');
+});
 $('tab-new').addEventListener('click', () => S.newTab(WID));
 $('win-min').addEventListener('click', () => S.minimize());
 $('win-max').addEventListener('click', () => S.maximize());

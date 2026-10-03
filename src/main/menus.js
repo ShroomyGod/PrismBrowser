@@ -1,6 +1,8 @@
 // menus.js — application menu (accelerators live here), tab context menu,
 // and page context menu.
-const { Menu, app, shell, clipboard } = require('electron');
+const { Menu, app, shell, clipboard, dialog, net } = require('electron');
+const fs = require('fs');
+const path = require('path');
 const settings = require('./settings');
 const stores = require('./stores');
 
@@ -147,6 +149,33 @@ function buildAppMenu(t) {
 }
 
 // ---------- Context menus ----------
+// "Save Image As..." has to actually prompt. wc.downloadURL() would quietly
+// drop the file into the downloads folder instead, which is not what the menu
+// item promises. net.fetch() runs in the main process, so it is not bound by
+// the page's CORS policy and can read cross-origin images.
+async function saveRemoteAs(wc, url, kind) {
+  if (!url || !/^(https?:|data:|blob:)/i.test(url)) return;
+  const win = BrowserWindowFromWc(wc);
+  let name = kind === 'image' ? 'image.png' : 'page.html';
+  try {
+    const base = path.basename(new URL(url).pathname);
+    if (base && /\.[a-z0-9]{2,5}$/i.test(base)) name = base;
+  } catch (_) { /* data: and blob: have no useful pathname */ }
+  const opts = { defaultPath: name };
+  try {
+    const res = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts);
+    if (res.canceled || !res.filePath) return;
+    const response = await net.fetch(url);
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    fs.writeFileSync(res.filePath, Buffer.from(await response.arrayBuffer()));
+  } catch (err) {
+    const msg = (err && err.message) || String(err);
+    if (win && !win.isDestroyed()) {
+      dialog.showMessageBox(win, { type: 'error', message: 'Could not save that file', detail: msg });
+    }
+  }
+}
+
 function showPageContextMenu(wc, params, tabsMgr) {
   const items = [];
   const hasLink = !!params.linkURL;
@@ -160,7 +189,7 @@ function showPageContextMenu(wc, params, tabsMgr) {
   if (params.mediaType === 'image' && params.srcURL) {
     items.push(
       { label: 'Open Image in New Tab', click: () => { const wid = focused(); if (wid) tabsMgr.createTab(wid, params.srcURL, { background: true }); } },
-      { label: 'Save Image As...', click: () => wc.downloadURL(params.srcURL) },
+      { label: 'Save Image As...', click: () => saveRemoteAs(wc, params.srcURL, 'image') },
       { label: 'Copy Image Address', click: () => clipboard.writeText(params.srcURL) },
       { type: 'separator' }
     );

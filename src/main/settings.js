@@ -15,7 +15,7 @@ const DEFAULTS = {
     askWhereToSave: true
   },
   search: {
-    defaultEngine: 'ddg',
+    defaultEngine: 'google',
     bangsEnabled: true,
     contributeHistory: false, // let visited pages feed the Prism Search index
     searxngUrl: '',          // optional local SearXNG URL; blank checks localhost:8080 then a free public fallback
@@ -68,6 +68,7 @@ const BUILTIN_ENGINES = [
   { id: 'google',   name: 'Google',        template: 'https://www.google.com/search?q=%s',  builtin: true },
   { id: 'bing',     name: 'Bing',          template: 'https://www.bing.com/search?q=%s',    builtin: true },
   { id: 'ddg',      name: 'DuckDuckGo',    template: 'https://duckduckgo.com/?q=%s',        builtin: true },
+  { id: 'yahoo',    name: 'Yahoo',         template: 'https://search.yahoo.com/search?p=%s', builtin: true },
   { id: 'brave',    name: 'Brave Search',  template: 'https://search.brave.com/search?q=%s',builtin: true },
   { id: 'startpage',name: 'Startpage',     template: 'https://www.startpage.com/sp/search?query=%s', builtin: true },
   { id: 'ecosia',   name: 'Ecosia',        template: 'https://www.ecosia.org/search?q=%s',  builtin: true },
@@ -76,7 +77,7 @@ const BUILTIN_ENGINES = [
 ];
 
 const BANGS = {
-  g: 'google', b: 'bing', d: 'ddg', ddg: 'ddg', br: 'brave', sp: 'startpage',
+  g: 'google', b: 'bing', d: 'ddg', ddg: 'ddg', y: 'yahoo', br: 'brave', sp: 'startpage',
   e: 'ecosia', q: 'qwant', w: 'wikipedia', s: 'ddg', yt: 'youtube', gh: 'github'
 };
 
@@ -127,8 +128,17 @@ class Settings {
     if (!this.data.search || typeof this.data.search !== 'object') this.data.search = { ...DEFAULTS.search };
     const customs = this.data.engines.filter((e) => !e.builtin);
     this.data.engines = [...BUILTIN_ENGINES, ...customs];
+    // One-time migration. Stored settings win over DEFAULTS, so a profile
+    // created before 1.0.3 still carries defaultEngine 'ddg' and would keep it
+    // forever - the new default in DEFAULTS would look like it never applied.
+    // Guarded by a flag so it fires exactly once: without it, deliberately
+    // choosing DuckDuckGo later would be silently reverted on every launch.
+    if (!this.data.search.defaultEngineMigrated) {
+      if (this.data.search.defaultEngine === 'ddg') this.data.search.defaultEngine = 'google';
+      this.data.search.defaultEngineMigrated = true;
+    }
     if (!this.data.engines.find((e) => e.id === this.all().search.defaultEngine)) {
-      this.all().search.defaultEngine = 'ddg';
+      this.all().search.defaultEngine = 'google';
     }
     securestore.save('settings', this.data);
     this.writeBootstrap();

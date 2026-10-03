@@ -73,7 +73,8 @@
     resultsEl.textContent = '';
     const box = PrismUI.el('div', 'build-cta');
     const img = document.createElement('img');
-    img.src = '/assets/icon-128.png'; img.alt = '';
+    img.className = 'wordmark';
+    img.src = '/assets/wordmark@2x.png'; img.alt = 'Prism';
     box.appendChild(img);
     box.appendChild(PrismUI.el('h2', null, 'Prism Browser Search'));
     box.appendChild(PrismUI.el('div', 'muted',
@@ -88,7 +89,8 @@
     resultsEl.textContent = '';
     const box = PrismUI.el('div', 'build-cta');
     const img = document.createElement('img');
-    img.src = '/assets/icon-128.png'; img.alt = '';
+    img.className = 'wordmark';
+    img.src = '/assets/wordmark@2x.png'; img.alt = 'Prism';
     box.appendChild(img);
     box.appendChild(PrismUI.el('h2', null, 'No saved pages in your Prism Browser index yet'));
     box.appendChild(PrismUI.el('div', 'muted', message ||
