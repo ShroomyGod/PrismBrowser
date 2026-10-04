@@ -52,6 +52,28 @@ contextBridge.exposeInMainWorld('prismShell', {
   newWindow: () => ipcRenderer.send('prism:new-window'),
   newPrivateWindow: () => ipcRenderer.send('prism:new-private-window'),
 
+  // ---------- main menu actions ----------
+  // Every ⋮ menu row resolves to one of these (src/shell/menu-items.js holds
+  // the labels; shell.js dispatches). None of them take a webContents input, so
+  // the main process always acts on the window that sent the message.
+  historyList: (q, limit) => ipcRenderer.invoke('prism:history:list', { q, limit }),
+  historyClear: () => ipcRenderer.invoke('prism:history:clear'),
+  downloadsList: () => ipcRenderer.invoke('prism:downloads:list'),
+  downloadsClear: () => ipcRenderer.invoke('prism:downloads:clear'),
+  openDownload: (path) => ipcRenderer.invoke('prism:downloads:open', { path }),
+  bookmarksList: () => ipcRenderer.invoke('prism:bookmarks:list'),
+  lockVault: () => ipcRenderer.invoke('prism:vault:lock'),
+  tabGroups: (op, groupId, name) => ipcRenderer.invoke('prism:tab:groups', { op, groupId, name }),
+  toggleFullscreen: () => ipcRenderer.send('prism:win:fullscreen'),
+  printPage: () => ipcRenderer.invoke('prism:page:print'),
+  printPdf: () => ipcRenderer.invoke('prism:page:print-pdf'),
+  savePage: () => ipcRenderer.invoke('prism:page:save'),
+  copyText: (text) => ipcRenderer.invoke('prism:clipboard:write', { text }),
+  copyPageText: () => ipcRenderer.invoke('prism:page:text'),
+  updateLists: () => ipcRenderer.invoke('prism:lists:update'),
+  clearSiteData: () => ipcRenderer.invoke('prism:site:clear-data'),
+  exitApp: () => ipcRenderer.send('prism:app:exit'),
+
   checkForUpdates: () => ipcRenderer.invoke('prism:update:check'),
   installUpdate: () => ipcRenderer.send('prism:update:install'),
   updateStatus: () => ipcRenderer.invoke('prism:update:status'),

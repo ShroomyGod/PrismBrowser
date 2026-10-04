@@ -1,7 +1,8 @@
 // shell-ipc.js — every ipcMain handler: shell controls, omnibox, internal
 // page APIs (history/bookmarks/downloads/passwords/settings/search),
 // extensions, privacy stats, and data clearing.
-const { ipcMain, app, shell, session, BrowserWindow } = require('electron');
+const { ipcMain, app, shell, session, clipboard, dialog, BrowserWindow } = require('electron');
+const fs = require('fs');
 const settings = require('./settings');
 const stores = require('./stores');
 const adblock = require('./adblock');
@@ -266,6 +267,143 @@ function registerIpc(tabs) {
   ipcMain.on('prism:tab-context-menu', (_e, { wid, tabId }) => menus.showTabContextMenu(wid, tabId, tabs));
   ipcMain.on('prism:new-private-window', () => tabs.createWindow({ private: true }));
   ipcMain.on('prism:new-window', () => tabs.createWindow());
+
+  // ---------- ⋮ main menu ----------
+  // The shell menu is data-driven (src/shell/menu-items.js); every row resolves
+  // to one of these handlers, so this block is the whole main-process surface
+  // behind the menu.
+
+  const activeWid = (e) => {
+    const w = winOf(e);
+    return (w && tabs.windowIdFor ? tabs.windowIdFor(w) : null) || tabs.focusedWindowId();
+  };
+
+  // Locking the vault flushes pending writes and drops the in-memory master key
+  // and cached plaintext; the key itself is re-unwrapped from the OS keyring on
+  // the next access, so nothing is ever written unencrypted.
+  ipcMain.handle('prism:vault:lock', () => securestore.lock());
+
+  ipcMain.handle('prism:tab:groups', (e, { op, groupId, name }) => {
+    const wid = activeWid(e);
+    if (op === 'list') return tabs.listGroups(wid);
+    if (op === 'create') return tabs.groupActiveTab(wid, name);
+    if (op === 'group-active') return tabs.groupActiveTab(wid);
+    if (op === 'ungroup') return tabs.ungroupActiveTab(wid);
+    if (op === 'close-all') return tabs.closeAllGroups(wid);
+    if (op === 'focus') return tabs.focusGroup(wid, groupId);
+    return null;
+  });
+
+  ipcMain.on('prism:win:fullscreen', (e) => {
+    const w = winOf(e);
+    if (!w) return;
+    w.setFullScreen(!w.isFullScreen());
+  });
+
+  ipcMain.handle('prism:page:print', (e) => {
+    const wc = tabs.activeWebContents(activeWid(e));
+    if (!wc) return { error: 'No active tab to print.' };
+    return new Promise((resolve) => {
+      wc.print({ silent: false, printBackground: true }, (ok, reason) => {
+        resolve(ok ? { ok: true } : { error: reason === 'cancelled' ? null : (reason || 'Printing failed.') });
+      });
+    });
+  });
+
+  ipcMain.handle('prism:page:print-pdf', async (e) => {
+    const wc = tabs.activeWebContents(activeWid(e));
+    if (!wc) return { error: 'No active tab to save.' };
+    const url = wc.getURL();
+    const suggested = (suggestedPdfName(url) || 'page') + '.pdf';
+    const win = winOf(e);
+    const res = await dialog.showSaveDialog(win, { defaultPath: suggested, filters: [{ name: 'PDF', extensions: ['pdf'] }] });
+    if (res.canceled || !res.filePath) return { ok: false };
+    try {
+      const pdf = await wc.printToPDF({ printBackground: true, pageSize: 'A4' });
+      fs.writeFileSync(res.filePath, pdf);
+      return { ok: true, path: res.filePath };
+    } catch (err) {
+      return { error: (err && err.message) || 'Could not save the PDF.' };
+    }
+  });
+
+  ipcMain.handle('prism:page:save', async (e) => {
+    const wc = tabs.activeWebContents(activeWid(e));
+    if (!wc) return { error: 'No active tab to save.' };
+    const url = wc.getURL();
+    if (!/^https?:/i.test(url)) return { error: 'Only web pages can be saved. Internal Prism pages cannot.' };
+    const win = winOf(e);
+    const res = await dialog.showSaveDialog(win, { defaultPath: suggestedPdfName(url) + '.html' });
+    if (res.canceled || !res.filePath) return { ok: false };
+    try {
+      const html = await wc.executeJavaScript('document.documentElement.outerHTML');
+      fs.writeFileSync(res.filePath, String(html), 'utf8');
+      return { ok: true, path: res.filePath };
+    } catch (err) {
+      return { error: (err && err.message) || 'Could not save the page.' };
+    }
+  });
+
+  ipcMain.handle('prism:clipboard:write', (_e, { text }) => {
+    if (typeof text !== 'string' || !text) return false;
+    clipboard.writeText(text);
+    return true;
+  });
+
+  ipcMain.handle('prism:page:text', async (e) => {
+    const wc = tabs.activeWebContents(activeWid(e));
+    if (!wc) return '';
+    try {
+      return await wc.executeJavaScript(
+        "(document.body && document.body.innerText || '').replace(/\\n{3,}/g, '\\n\\n').trim()"
+      );
+    } catch (_) { return ''; }
+  });ipcMain.handle('prism:site:clear-data', async (e) => {
+    const wid = activeWid(e);
+    const wc = tabs.activeWebContents(wid);
+    if (!wc) return { error: 'No active tab.' };
+    const url = wc.getURL();
+    // Only real web sites have site data. prism:// and view-source: must be
+    // refused rather than "clearing" a made-up host.
+    if (!/^https?:/i.test(url)) return { error: 'This tab is not showing a web site.' };
+    let host = '';
+    try { host = new URL(url).hostname; } catch (_) {}
+    if (!host) return { error: 'This tab is not showing a web site.' };
+// Ask the webContents for its own session so private windows clear their own
+// partition instead of guessing at partition names.
+const sess = wc.session || session.fromPartition('persist:prism');
+const origin = url.startsWith('https') ? 'https://' + host : 'http://' + host;
+try {
+      // Cookies come back under the registered scheme, storage under the page's
+      // own scheme, so both origins are cleared.
+      await sess.clearStorageData({ origin, storages: SITE_DATA_STORAGES });
+      await sess.clearStorageData({ origin: 'https://' + host, storages: SITE_DATA_STORAGES });
+      wc.reload();
+      return { ok: true, host };
+    } catch (err) {
+      return { error: (err && err.message) || 'Could not clear site data.' };
+    }
+  });
+
+  ipcMain.on('prism:app:exit', () => {
+    tabs.saveSession();
+    app.quit();
+  });
+}
+
+const SITE_DATA_STORAGES = ['cookies', 'localstorage', 'indexdb', 'shadercache', 'websql', 'serviceworkers', 'cachestorage'];
+
+function suggestedPdfName(rawUrl) {
+  try {
+    const u = new URL(rawUrl);
+    const base = (u.hostname + (u.pathname === '/' ? '' : u.pathname))
+      .replace(/[^a-z0-9._-]+/gi, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 80);
+    return base || 'page';
+  } catch (_) {
+    return 'page';
+  }
 }
 
 module.exports = { registerIpc };

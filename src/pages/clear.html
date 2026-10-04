@@ -1,0 +1,138 @@
+<!doctype html>
+<html data-theme="dark">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="/assets/icon-32.png">
+<link rel="stylesheet" href="/common.css">
+<title>Delete browsing data - Prism</title>
+<style>
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
+  .card h3 { margin: 0 0 2px; font-size: 14px; }
+  .times { display: flex; gap: 8px; margin-top: 12px; }
+  .times button.on { border-color: var(--accent); color: var(--accent); }
+  #done { margin-top: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topnav">
+    <a href="/newtab">New Tab</a>
+    <a href="/history">History</a>
+    <a href="/downloads">Downloads</a>
+    <a href="/privacy">Privacy</a>
+    <a href="/clear" class="on">Clear data</a>
+    <a href="/settings">Settings</a>
+  </div>
+  <div class="page-head">
+    <img class="wordmark" src="/assets/wordmark@2x.png" alt="Prism">
+    <h1>Delete browsing data</h1>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h3>Basic</h3>
+      <div class="muted">Clears the data most people mean when they clear their browser.</div>
+      <div id="basic"></div>
+      <div class="times" id="range"></div>
+    </div>
+
+    <div class="card">
+      <h3>Advanced</h3>
+      <div class="muted">Also removes saved credentials and site storage. Passwords are cleared from the encrypted vault.</div>
+      <div id="advanced"></div>
+      <div class="times" id="range2"></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <div class="row between">
+      <span class="muted">Cleared data cannot be recovered. Tab groups and bookmarks are never touched.</span>
+      <button id="clear" class="danger">Clear selected data</button>
+    </div>
+    <div class="muted" id="done" style="margin-top:10px"></div>
+  </div>
+</div>
+<script src="/common.js"></script>
+<script>
+(async function () {
+  await PrismUI.boot();
+
+  // Same option keys the main process already understands in prism:clear-data.
+  const BASIC = [
+    ['history', 'Browsing history'],
+    ['downloads', 'Download list'],
+    ['cache', 'Cached images and files'],
+    ['cookies', 'Cookies and site data']
+  ];
+  const ADVANCED = [
+    ['passwords', 'Passwords and autofill'],
+    ['siteData', 'All site storage (local storage, IndexedDB, service workers)']
+  ];
+
+  const inputs = {};
+  function build(host, fields) {
+    const box = document.getElementById(host);
+    for (const [key, label] of fields) {
+      const { line, input } = PrismUI.switchRow(label, '', key === 'cookies' || key === 'history' || key === 'downloads' || key === 'cache', () => {});
+      inputs[key] = input;
+      box.appendChild(line);
+    }
+  }
+  build('basic', BASIC);
+  build('advanced', ADVANCED);
+  // Advanced defaults to off: it destroys credentials.
+  inputs.passwords.checked = false;
+  inputs.siteData.checked = false;
+
+  const RANGES = ['Last hour', 'Last 24 hours', 'Last 7 days', 'All time'];
+  let range = RANGES[1];
+  function buildRanges(host) {
+    const box = document.getElementById(host);
+    for (const label of RANGES) {
+      const b = document.createElement('button');
+      b.className = label === range ? 'on' : '';
+      b.textContent = label;
+      b.addEventListener('click', () => {
+        range = label;
+        for (const other of [...box.children, ...document.getElementById('range2').children]) {
+          other.className = other.textContent === range ? 'on' : '';
+        }
+      });
+      box.appendChild(b);
+    }
+  }
+  buildRanges('range');
+  buildRanges('range2');
+
+  const done = document.getElementById('done');
+  document.getElementById('clear').addEventListener('click', async () => {
+    const opts = {};
+    for (const key of Object.keys(inputs)) opts[key] = inputs[key].checked;
+    const keys = Object.keys(opts).filter((k) => opts[k]);
+    if (!keys.length) { done.textContent = 'Nothing selected.'; return; }
+    if (!confirm('Delete the selected browsing data? This cannot be undone.')) return;
+    done.textContent = 'Clearing...';
+    try {
+      if (opts.history) {
+        if (range === 'All time') {
+          await window.prism.historyClear();
+        } else {
+          // Older entries only: delete every row outside the window, then wipe
+          // the remainder so nothing outside it survives.
+          const list = (await window.prism.historyList('', 100000)) || [];
+          const windows = { 'Last hour': 3600e3, 'Last 24 hours': 86400e3, 'Last 7 days': 7 * 86400e3 };
+          const cutoff = Date.now() - windows[range];
+          for (const h of list) if ((h.time || 0) < cutoff) await window.prism.historyDelete(h.url);
+        }
+      }
+      await window.prism.clearData(opts);
+      done.textContent = 'Cleared: ' + keys.map((k) => (inputs[k].closest('.setting-line').querySelector('b').textContent)).join(', ') + '.';
+    } catch (error) {
+      done.textContent = 'Could not clear the selected data: ' + ((error && error.message) || error);
+    }
+  });
+
+  })();
+</script>
+</body>
+</html>

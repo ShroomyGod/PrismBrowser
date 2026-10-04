@@ -1,14 +1,14 @@
 {
   "name": "prism-browser",
   "productName": "Prism",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Prism: a privacy-focused desktop web browser.",
   "main": "src/main/main.js",
   "scripts": {
     "start": "electron .",
     "icons": "node scripts/process-logo.js",
     "release": "node scripts/release.js",
-    "test": "node test/search-web.test.js && node test/theme-engine.test.js && node test/update-identity.test.js && node test/release-helper.test.js && electron test/theme-ui.test.js",
+    "test": "node test/search-web.test.js && node test/theme-engine.test.js && node test/update-identity.test.js && node test/adblock-matching.test.js && node test/release-helper.test.js && node test/menu-items.test.js && electron test/theme-ui.test.js && electron test/menu-ui.test.js",
     "test:ui": "electron test/theme-ui.test.js",
     "build": "electron-builder --win --dir",
     "build:legacy": "electron-builder --win",

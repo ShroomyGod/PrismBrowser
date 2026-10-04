@@ -257,7 +257,7 @@ function hideDropdown() {
 // toasts) — otherwise the page hides them. Poll once per frame and report the
 // bottom edge; main applies it as the shell view's height. Overlays are all
 // top-anchored so a single rectangle from y=0 always covers them.
-const OVERLAY_IDS = ['omni-dropdown', 'menu-panel', 'shield-pop', 'ext-pop', 'theme-pop', 'findbar', 'load-progress', 'toasts', 'status-bubble'];
+const OVERLAY_IDS = ['omni-dropdown', 'menu-panel', 'shield-pop', 'ext-pop', 'theme-pop', 'findbar', 'load-progress', 'toasts', 'status-bubble', 'menu-sub'];
 let lastExtent = -1;
 function computeNeed() {
   try {
@@ -355,7 +355,7 @@ window.addEventListener('resize', () => { syncChromeHeight(); alignOmniDropdown(
 document.addEventListener('click', (ev) => {
   let changed = false;
   if (!$('omni-dropdown').contains(ev.target) && ev.target !== omni && $('omni-dropdown').style.display !== 'none') { hideDropdown(); changed = true; }
-  if (!$('menu-panel').contains(ev.target) && ev.target.closest && !ev.target.closest('#menu-btn') && $('menu-panel').style.display !== 'none') { $('menu-panel').style.display = 'none'; changed = true; }
+  if (!$('menu-panel').contains(ev.target) && !$('menu-sub').contains(ev.target) && ev.target.closest && !ev.target.closest('#menu-btn') && $('menu-panel').style.display !== 'none') { closeMenu(); changed = true; }
   if (!$('ext-pop').contains(ev.target) && ev.target.closest && !ev.target.closest('#ext-btn') && $('ext-pop').style.display !== 'none') { $('ext-pop').style.display = 'none'; changed = true; }
   if (!$('theme-pop').contains(ev.target) && ev.target.closest && !ev.target.closest('#theme-btn') && $('theme-pop').style.display !== 'none') { $('theme-pop').style.display = 'none'; changed = true; }
   if (!$('shield-pop').contains(ev.target) && ev.target.closest && !ev.target.closest('#shield') && $('shield-pop').style.display !== 'none') { $('shield-pop').style.display = 'none'; changed = true; }
@@ -387,7 +387,7 @@ $('star').addEventListener('click', async () => {
 $('shield').addEventListener('click', () => {
   const pop = $('shield-pop');
   const show = pop.style.display === 'none';
-  $('menu-panel').style.display = 'none';
+  closeMenu();
   $('ext-pop').style.display = 'none';
   pop.style.display = show ? '' : 'none';
   if (show) refreshShieldPop();
@@ -439,7 +439,7 @@ async function refreshExtList() {
 $('ext-btn').addEventListener('click', () => {
   const show = extPop.style.display === 'none';
   // Only one toolbar popup at a time.
-  $('menu-panel').style.display = 'none';
+  closeMenu();
   $('shield-pop').style.display = 'none';
   extPop.style.display = show ? '' : 'none';
   if (show) refreshExtList();
@@ -452,15 +452,6 @@ S.onExtensionsChanged(() => refreshExtList());
 // Prime the count/badge at boot rather than waiting for the first popup open,
 // so the toolbar button reflects reality from the first frame.
 refreshExtList();
-
-$('menu-btn').addEventListener('click', () => {
-  const panel = $('menu-panel');
-  const show = panel.style.display === 'none';
-  $('shield-pop').style.display = 'none';
-  panel.style.display = show ? '' : 'none';
-  $('mi-bookmarksbar').textContent = state.bookmarksBar ? 'Hide bookmarks bar' : 'Show bookmarks bar';
-  syncExtentNow();
-});
 
 $('shield-global').addEventListener('change', async (ev) => {
   const on = ev.target.checked;
@@ -503,48 +494,357 @@ async function refreshShieldPop() {
   $('shield-note').textContent = counts;
 }
 
-// ---------- menu panel ----------
-$('menu-panel').addEventListener('click', async (ev) => {
-  const btn = ev.target.closest('.mi');
-  if (!btn) return;
-  $('menu-panel').style.display = 'none';
-  syncExtentNow();
-  const act = btn.dataset.act;
-  const pages = { history: 'history', bookmarks: 'bookmarks', downloads: 'downloads', passwords: 'passwords', extensions: 'extensions', settings: 'settings', privacy: 'privacy' };
-  if (act === 'new-tab') S.newTab(WID);
-  else if (act === 'private') S.newPrivateWindow();
-  else if (act === 'search-home') S.newTab(WID, 'prism://search');
-  else if (act === 'update-lists') { toast('Updating protection lists...', 'Updating ad-block and malware feeds in the background.'); }
-  else if (act === 'check-update') {
-    const pending = toast('Checking for updates...', 'Checking for a newer version or bug-fix build.');
-    try {
-      const st = await S.checkForUpdates();
-      if (st && st.error) toast('Update check failed', st.error, true);
-      else if (st && st.downloaded) {
-        pendingUpdate = { version: st.version, downloaded: true, buildRefresh: !!st.buildRefresh };
-        showUpdateButton(pendingUpdate);
-        const readyMessage = st.buildRefresh
-          ? 'The latest same-version bug-fix build is ready to install.'
-          : 'Version ' + st.version + ' is ready to install.';
-        toast('Update ready', readyMessage, false, 'Update now', () => S.installUpdate());
+// ---------- main menu ----------
+// The tree lives in menu-items.js; this renders it, flies out submenus, and
+// dispatches each item's action. Keeping the actions in one table (rather than a
+// long if/else chain) is what lets test/menu-items.test.js prove no menu item is
+// left without a handler.
+const MENU = window.PRISM_MENU;
+let openSubmenuFor = null;
+
+// History, bookmark, and extension names are user data and are not guaranteed
+// to be parseable URLs, so hostname extraction must never throw.
+function menuHostname(raw) {
+  try { return new URL(raw).hostname; } catch (_) { return ''; }
+}
+
+function menuRow(item, inSub) {
+  if (item.separator) return el('div', 'msep');
+  const row = el('button', 'mi');
+  row.dataset.id = item.id;
+  if (item.list) row.dataset.list = item.list;
+  if (item.action) row.dataset.act = item.action;
+  if (item.target) row.dataset.target = item.target;
+  if (item.submenu) row.dataset.hasSub = '1';
+  if (item.icon) row.innerHTML = item.icon;
+  const label = el('span', 'mi-label');
+  label.textContent = item.label;
+  row.appendChild(label);
+  if (item.detail) {
+    const detail = el('span', 'mi-detail');
+    detail.textContent = item.detail;
+    row.appendChild(detail);
+  }
+  if (item.shortcut) {
+    const key = el('span', 'mi-key');
+    key.textContent = item.shortcut;
+    row.appendChild(key);
+  }
+  if (item.submenu) row.appendChild(el('span', 'mi-chevron'));
+  if (item.id === 'profile') row.classList.add('profile-row');
+  return row;
+}
+
+// A couple of rows read live state, so they are re-labelled on each open
+// instead of carrying stale text from the static tree.
+function liveMenuItem(item) {
+  if (item.id === 'bookmarks-bar') {
+    return Object.assign({}, item, { label: state.bookmarksBar ? 'Hide bookmarks bar' : 'Show bookmarks bar' });
+  }
+  if (item.id === 'zoom-level') {
+    const zoom = (state.active && state.active.zoom) || 1;
+    return Object.assign({}, item, { label: Math.round(zoom * 100) + '%' });
+  }
+  return item;
+}
+
+function renderMenu() {
+  const panel = $('menu-panel');
+  panel.textContent = '';
+  for (const section of MENU.sections) {
+    for (const item of section.items) {
+      panel.appendChild(menuRow(liveMenuItem(item), false));
+      // Section rules mirror Chrome's grouping rather than hard-coded blanks.
+      if (item.id === 'new-private' || item.id === 'clear-data' || item.id === 'share') {
+        panel.appendChild(el('div', 'msep'));
       }
-      else if (st && st.available) {
-        pendingUpdate = { version: st.version, downloaded: false, buildRefresh: !!st.buildRefresh };
-        showUpdateButton(pendingUpdate);
-        const updateLabel = st.buildRefresh ? 'the latest same-version bug-fix build' : 'version ' + st.version;
-        toast('Update downloading', 'Downloading ' + updateLabel + ' - ' + (st.percent || 0) + '%');
-      }
-      else toast('You are up to date', 'Prism ' + (st && st.version) + ' is the latest version.');
-    } catch (e) {
-      toast('Update check failed', (e && e.message) || String(e), true);
-    } finally {
-      pending(); // the answer replaces the progress notice, it does not stack on it
     }
   }
-  else if (act === 'bookmarks-bar') S.bookmarksBarToggle();
-  else if (act === 'about') S.newTab(WID, 'prism://settings#about');
-  else if (pages[act]) S.newTab(WID, 'prism://' + pages[act]);
+}
+
+function closeMenu() {
+  $('menu-panel').style.display = 'none';
+  closeSubmenu();
+  syncExtentNow();
+}
+
+function closeSubmenu() {
+  const sub = $('menu-sub');
+  sub.style.display = 'none';
+  sub.textContent = '';
+  openSubmenuFor = null;
+}
+
+function submenuItemsFor(id) {
+  for (const section of MENU.sections) {
+    for (const item of section.items) {
+      if (item.id === id) return item.submenu || [];
+    }
+  }
+  return [];
+}
+
+async function renderSubmenu(parentRow) {
+  const children = submenuItemsFor(parentRow.dataset.id);
+  const sub = $('menu-sub');
+  sub.textContent = '';
+  let listed = false;
+  for (const child of children) {
+    if (child.list) {
+      listed = true;
+      const rows = await loadMenuList(child.list);
+      for (const row of rows) sub.appendChild(row);
+      if (!rows.length) {
+        const note = el('div', 'pop-note');
+        note.textContent = emptyListText(child.list);
+        sub.appendChild(note);
+      }
+      continue;
+    }
+    sub.appendChild(menuRow(liveMenuItem(child), true));
+  }
+  if (listed) sub.appendChild(el('div', 'msep'));
+  sub.style.display = '';
+
+  // Position against the row. #menu-sub is absolutely positioned but its
+  // containing block is #chrome, not #menu-panel, so BOTH offsets must be
+  // computed from #chrome. Leaving left/right unset would fall back to the
+  // static position and strand the flyout at the far left of the window.
+  const chromeBox = $('chrome').getBoundingClientRect();
+  const panelBox = $('menu-panel').getBoundingClientRect();
+  const gap = 6;
+  const subWidth = sub.offsetWidth;
+  const subHeight = sub.offsetHeight;
+  const panelLeft = panelBox.left - chromeBox.left;
+  // The menu is right-anchored, so the flyout opens leftwards; if there is no
+  // room it goes to the right of the panel instead of off-screen.
+  let left = panelLeft - subWidth - gap;
+  if (left < 0) left = panelLeft + panelBox.width + gap;
+  sub.style.left = Math.round(left) + 'px';
+
+  // Keep it inside the vertical span the shell view actually covers.
+  // The panel scrolls once it exceeds max-height, and growing the native shell
+  // view can shift that scroll, so bring the parent row back into view before
+  // measuring it or the flyout tracks a row the user cannot see.
+  parentRow.scrollIntoView({ block: 'nearest' });
+  const rowBox2 = parentRow.getBoundingClientRect();
+  let top = rowBox2.top - chromeBox.top;
+  const maxTop = Math.max(0, chromeBox.height - subHeight);
+  if (top + subHeight > chromeBox.height) top = Math.max(0, maxTop);
+  sub.style.top = Math.round(top) + 'px';
+  syncExtentNow();
+}
+
+function emptyListText(kind) {
+  if (kind === 'history') return 'No browsing history yet.';
+  if (kind === 'downloads') return 'No downloads yet.';
+  if (kind === 'bookmarks') return 'No bookmarks yet.';
+  if (kind === 'extensions') return 'No extensions installed.';
+  if (kind === 'groups') return 'No tab groups yet.';
+  return '';
+}
+
+function menuListRow(label, sublabel, act, payload) {
+  const row = el('button', 'mi menu-list-row');
+  if (act) row.dataset.act = act;
+  if (payload) row.dataset.payload = payload;
+  const text = el('span', 'menu-list-text');
+  const l = el('span', 'l');
+  l.textContent = label;
+  text.appendChild(l);
+  if (sublabel) {
+    const s = el('span', 's');
+    s.textContent = sublabel;
+    text.appendChild(s);
+  }
+  row.appendChild(text);
+  return row;
+}
+
+async function loadMenuList(kind) {
+  try {
+    if (kind === 'history') {
+      const entries = (await S.historyList('', 6)) || [];
+      return entries.map((h) => menuListRow(h.title || h.url, menuHostname(h.url), 'open-url', h.url));
+    }
+    if (kind === 'downloads') {
+      const entries = (await S.downloadsList()) || [];
+      return entries.slice(0, 6).map((d) => menuListRow(d.filename || d.name || 'Download', d.status || '', 'open-download', d.path));
+    }
+    if (kind === 'bookmarks') {
+      const entries = (await S.bookmarksList()) || [];
+      return entries.slice(0, 8).map((b) => menuListRow(b.title || b.url, menuHostname(b.url), 'open-url', b.url));
+    }
+    if (kind === 'extensions') {
+      const entries = (await S.extensionsList()) || [];
+      return entries.slice(0, 8).map((x) => menuListRow(x.name || x.id, x.active === false ? 'Paused' : 'Active', 'extensions-page'));
+    }
+    if (kind === 'groups') {
+      const groups = (await S.tabGroups('list')) || [];
+      return groups.map((g) => menuListRow(g.name, g.tabs.length + (g.tabs.length === 1 ? ' tab' : ' tabs'), 'focus-group', g.id));
+    }
+  } catch (error) {
+    console.warn('[menu] could not load ' + kind, (error && error.message) || error);
+  }
+  return [];
+}
+
+// Actions reachable from menu rows, including the dynamic list rows.
+const MENU_ACTIONS = {
+  'new-tab': () => S.newTab(WID),
+  'new-window': () => S.newWindow(),
+  'new-private': () => S.newPrivateWindow(),
+  'settings': () => S.newTab(WID, 'prism://settings'),
+  'privacy': () => S.newTab(WID, 'prism://privacy'),
+  'about': () => S.newTab(WID, 'prism://settings#about'),
+  'extensions-page': () => S.newTab(WID, 'prism://extensions'),
+  'passwords-page': () => S.newTab(WID, 'prism://passwords'),
+  'password-settings': () => S.newTab(WID, 'prism://settings#privacy'),
+  'lock-vault': () => S.lockVault(),
+  'history-page': () => S.newTab(WID, 'prism://history'),
+  'history-clear': () => S.historyClear(),
+  'downloads-page': () => S.newTab(WID, 'prism://downloads'),
+  'downloads-clear': () => S.downloadsClear(),
+  'bookmarks-page': () => S.newTab(WID, 'prism://bookmarks'),
+  'bookmarks-bar': () => S.bookmarksBarToggle(),
+  'clear-data': () => S.newTab(WID, 'prism://clear'),
+  'zoom-in': () => S.zoom(WID, 1),
+  'zoom-out': () => S.zoom(WID, -1),
+  'zoom-reset': () => S.zoom(WID, 0),
+  'fullscreen': () => S.toggleFullscreen(),
+  'print': () => S.printPage(),
+  'print-pdf': () => S.printPdf(),
+  'save-page': () => S.savePage(),
+  'copy-link': () => copyActiveUrl(true),
+  'copy-page-url': () => copyActiveUrl(false),
+  'copy-page-text': () => S.copyPageText().then((text) => {
+    if (!text) return toast('Nothing to copy', 'This page has no selectable text.');
+    return S.copyText(text).then(() => toast('Page text copied', text.length + ' characters on the clipboard.'));
+  }),
+  'find-open': () => openFind(),
+  'find-next': () => stepFind(1),
+  'find-prev': () => stepFind(-1),
+  'group-create': () => S.tabGroups('create').then((group) =>
+    toast('Tab grouped', group ? 'Added to ' + group.name + '.' : '')),
+  'group-remove': () => S.tabGroups('ungroup').then((group) =>
+    toast('Tab ungrouped', group ? 'Removed from ' + group.name + '.' : '')),
+  'group-close-all': () => S.tabGroups('close-all').then(() => toast('Tab groups closed', 'Grouped tabs were closed.')),
+  'focus-group': (row) => S.tabGroups('focus', row.dataset.payload),
+  'translate': (row) => {
+    const url = translateUrlFor(row.dataset.target || 'en');
+    if (!url) return toast('Nothing to translate', 'Open a web page first.');
+    return S.newTab(WID, url);
+  },
+  'devtools': () => S.devtools(WID),
+  'reload': () => S.reload(WID),
+  'hard-reload': () => S.reload(WID, true),
+  'search-home': () => S.newTab(WID, 'prism://search'),
+  'shortcuts': () => S.newTab(WID, 'prism://shortcuts'),
+  'update-lists': () => S.updateLists().then((result) =>
+    result && result.error
+      ? toast('List update failed', result.error, true)
+      : toast('Protection lists updated', 'Ad-block and malware feeds are current.')),
+  'clear-site-data': () => S.clearSiteData().then((result) =>
+    result && result.error
+      ? toast('Could not clear site data', result.error, true)
+      : toast('Site data cleared', 'Cookies and storage for this site were removed.')),
+  'open-repo': () => S.newTab(WID, 'https://github.com/shroomygod/PrismBrowser'),
+  'open-issues': () => S.newTab(WID, 'https://github.com/shroomygod/PrismBrowser/issues'),
+  'open-url': (row) => S.newTab(WID, row.dataset.payload),
+  'open-download': (row) => S.openDownload(row.dataset.payload),
+  'exit': () => S.exitApp(),
+  'check-update': () => runUpdateCheck()
+};
+
+function translateUrlFor(code) {
+  const url = (state.active && state.active.url) || '';
+  if (!/^https?:/i.test(url)) return null;
+  return 'https://translate.google.com/translate?sl=auto&tl=' + encodeURIComponent(code) +
+    '&u=' + encodeURIComponent(url) + '&op=translate';
+}
+
+function copyActiveUrl(webOnly) {
+  const url = (state.active && state.active.url) || '';
+  if (!url || (webOnly && !/^https?:/i.test(url))) {
+    return toast(webOnly ? 'No link on this page' : 'No page address', 'This tab is not showing a web page.');
+  }
+  S.copyText(url).then(() => toast('Copied to clipboard', url));
+}
+
+function stepFind(delta) {
+  const term = $('find-input') ? $('find-input').value.trim() : '';
+  if (!term) return openFind();
+  S.find(WID, term, { forward: delta > 0, findNext: true });
+}
+
+// Shared by the menu item and the toolbar button so both report the same thing.
+async function runUpdateCheck() {
+  const pending = toast('Checking for updates...', 'Checking for a newer version or bug-fix build.');
+  try {
+    const st = await S.checkForUpdates();
+    if (st && st.error) toast('Update check failed', st.error, true);
+    else if (st && st.downloaded) {
+      pendingUpdate = { version: st.version, downloaded: true, buildRefresh: !!st.buildRefresh };
+      showUpdateButton(pendingUpdate);
+      toast('Update ready', st.buildRefresh
+        ? 'The latest same-version bug-fix build is ready to install.'
+        : 'Version ' + st.version + ' is ready to install.', false, 'Update now', () => S.installUpdate());
+    } else if (st && st.available) {
+      pendingUpdate = { version: st.version, downloaded: false, buildRefresh: !!st.buildRefresh };
+      showUpdateButton(pendingUpdate);
+      toast('Update available', st.buildRefresh
+        ? 'Downloading the latest bug-fix build...'
+        : 'Downloading version ' + st.version + '...');
+    } else toast('You are up to date', 'Prism ' + (st && st.version) + ' is the latest version.');
+  } catch (error) {
+    toast('Update check failed', (error && error.message) || String(error), true);
+  } finally {
+    pending();
+  }
+}
+
+async function runMenuAction(row) {
+  const act = row.dataset.act;
+  const handler = MENU_ACTIONS[act];
+  if (!handler) {
+    console.warn('[menu] no handler for action', act);
+    return;
+  }
+  return handler(row);
+}
+
+$('menu-btn').addEventListener('click', () => {
+  const panel = $('menu-panel');
+  const show = panel.style.display === 'none';
+  $('shield-pop').style.display = 'none';
+  $('ext-pop').style.display = 'none';
+  if (!show) return closeMenu();
+  $('theme-pop').style.display = 'none';
+  renderMenu();
+  panel.style.display = '';
+  closeSubmenu();
+  syncExtentNow();
 });
+
+$('menu-panel').addEventListener('mouseover', (ev) => {
+  const row = ev.target.closest('.mi');
+  if (!row || !row.dataset.hasSub) {
+    closeSubmenu();
+    return;
+  }
+  if (openSubmenuFor === row.dataset.id && $('menu-sub').style.display !== 'none') return;
+  openSubmenuFor = row.dataset.id;
+  renderSubmenu(row);
+});
+
+async function handleMenuClick(ev) {
+  const row = ev.target.closest('.mi');
+  if (!row || row.dataset.hasSub) return;
+  closeMenu();
+  await runMenuAction(row);
+}
+$('menu-panel').addEventListener('click', handleMenuClick);
+$('menu-sub').addEventListener('click', handleMenuClick);
 
 // ---------- bookmarks bar ----------
 function renderBookmarksBar() {
@@ -705,7 +1005,7 @@ let themeSavePending = false;
 const themePop = $('theme-pop');
 $('theme-btn').addEventListener('click', () => {
   const show = themePop.style.display === 'none';
-  $('menu-panel').style.display = 'none'; $('ext-pop').style.display = 'none'; $('shield-pop').style.display = 'none';
+  closeMenu(); $('ext-pop').style.display = 'none'; $('shield-pop').style.display = 'none';
   if ($('omni-dropdown').style.display !== 'none') hideDropdown();
   themePop.style.display = show ? '' : 'none';
   if (show) syncThemeControls();
@@ -804,7 +1104,7 @@ S.onChromeMode((mode) => document.body.classList.toggle('html-fullscreen', mode 
 S.onPageFocused(() => {
   let changed = false;
   if ($('omni-dropdown').style.display !== 'none') { hideDropdown(); changed = true; }
-  if ($('menu-panel').style.display !== 'none') { $('menu-panel').style.display = 'none'; changed = true; }
+  if ($('menu-panel').style.display !== 'none' || $('menu-sub').style.display !== 'none') { closeMenu(); changed = true; }
   if ($('shield-pop').style.display !== 'none') { $('shield-pop').style.display = 'none'; changed = true; }
   if ($('ext-pop').style.display !== 'none') { $('ext-pop').style.display = 'none'; changed = true; }
   if ($('theme-pop').style.display !== 'none') { $('theme-pop').style.display = 'none'; changed = true; }
@@ -813,7 +1113,10 @@ S.onPageFocused(() => {
 
 S.onCmd((cmd) => {
   if (cmd === 'focus-omnibox') { omni.focus(); omni.select(); }
+  else if (cmd === 'search-web') { omni.value = ''; suggestFor(''); omni.focus(); }
   else if (cmd === 'open-find') openFind();
+  else if (cmd === 'find-next') stepFind(1);
+  else if (cmd === 'find-prev') stepFind(-1);
   else if (cmd === 'toggle-bookmarks-bar') S.bookmarksBarToggle();
 });
 
@@ -866,28 +1169,7 @@ function showUpdateButton(info) {
 }
 $('update-btn').addEventListener('click', async () => {
   if (pendingUpdate && pendingUpdate.downloaded) { S.installUpdate(); return; }
-  const pending = toast('Checking for updates...', 'Checking for a newer version or bug-fix build.');
-  try {
-    const st = await S.checkForUpdates();
-    if (st && st.downloaded) {
-      pendingUpdate = { version: st.version, downloaded: true, buildRefresh: !!st.buildRefresh };
-      showUpdateButton(pendingUpdate);
-      toast('Update ready to install', st.buildRefresh ? 'The latest bug-fix build is ready.' : 'Prism ' + (st.version || '') + ' is ready.',
-        false, 'Update now', () => S.installUpdate());
-    } else if (st && st.available) {
-      pendingUpdate = { version: st.version, downloaded: false, buildRefresh: !!st.buildRefresh };
-      showUpdateButton(pendingUpdate);
-      toast('Update available', st.buildRefresh ? 'Downloading the latest bug-fix build...' : 'Downloading version ' + (st.version || '') + '...');
-    } else if (st && st.error) {
-      toast('Update check failed', st.error, true);
-    } else {
-      toast('You are up to date', 'Prism ' + (st && st.version) + ' is the latest version.');
-    }
-  } catch (e) {
-    toast('Update check failed', (e && e.message) || String(e), true);
-  } finally {
-    pending();
-  }
+  await runUpdateCheck();
 });
 
 S.onSettingsChanged((s) => {
@@ -915,9 +1197,40 @@ S.onDownloadThreat(({ filename, threat }) => {
 
 window.addEventListener('keydown', (ev) => {
   if (ev.key === 'Escape') {
-    if (findVisible) closeFind();
+    if ($('menu-panel').style.display !== 'none' || $('menu-sub').style.display !== 'none') closeMenu();
+    else if (findVisible) closeFind();
+  }
+  // Arrow keys walk the open menu, then its submenu, like any native menu.
+  if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+    if ($('menu-panel').style.display === 'none') return;
+    const sub = $('menu-sub');
+    const scope = sub.style.display !== 'none' ? sub : $('menu-panel');
+    moveMenuSelection(scope, ev.key === 'ArrowDown' ? 1 : -1);
+    ev.preventDefault();
+  } else if (ev.key === 'ArrowRight') {
+    const focused = $('menu-panel').querySelector('.mi.sel[data-has-sub]');
+    if (focused) { renderSubmenu(focused); }
+  } else if (ev.key === 'ArrowLeft') {
+    if ($('menu-sub').style.display !== 'none') { closeSubmenu(); syncExtentNow(); }
+  } else if (ev.key === 'Enter' && $('menu-panel').style.display !== 'none') {
+    const focused = $('menu-panel').querySelector('.mi.sel');
+    if (focused) { ev.preventDefault(); handleMenuClick({ target: focused }); }
   }
 });
+
+function moveMenuSelection(scope, delta) {
+  const rows = Array.from(scope.querySelectorAll('.mi'));
+  if (!rows.length) return;
+  let index = rows.findIndex((r) => r.classList.contains('sel'));
+  index = (index + delta + rows.length) % rows.length;
+  for (const row of rows) row.classList.remove('sel');
+  const next = rows[index];
+  next.classList.add('sel');
+  next.scrollIntoView({ block: 'nearest' });
+  // Hovering a parent row opens its submenu, which is what makes arrow-key
+  // navigation feel like a real menu instead of a listbox.
+  if (scope.id === 'menu-panel' && next.dataset.hasSub) renderSubmenu(next);
+}
 window.addEventListener('dblclick', (ev) => {
   if (ev.target.id === 'drag-space' || ev.target.id === 'tabstrip') S.maximize();
 });

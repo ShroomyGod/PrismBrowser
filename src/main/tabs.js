@@ -39,6 +39,8 @@ class TabsManager {
     this.tabs = new Map();     // tabId -> tab
     this.sessions = null;
     this.findState = new Map(); // wid -> {text}
+    this.groups = new Map();    // groupId -> {id, name, collapsed, tabs:[tabId]}
+    this._groupSequence = 0;
     this._quitting = false;
   }
 
@@ -147,6 +149,10 @@ class TabsManager {
     win.on('closed', () => {
       const rec = this.windows.get(wid);
       if (rec) {
+        for (const group of this.groupsForWindow(rec)) {
+          for (const tabId of group.tabs) { const t = this.tabs.get(tabId); if (t) t.groupId = null; }
+          this.groups.delete(group.id);
+        }
         // Closing the LAST private window resets the shared in-memory profile, so
         // the next one starts clean instead of inheriting the last one's cookies.
         // Checked after this window is still in the map, so privateWindowCount()
@@ -373,6 +379,7 @@ class TabsManager {
   }
 
   closeTab(tabId) {
+    this.removeTabFromGroups(tabId);
     const tab = this.tabs.get(tabId);
     if (!tab) return;
     const rec = this.windows.get(tab.winId);
@@ -469,13 +476,128 @@ class TabsManager {
     if (hard) wc.reloadIgnoringCache(); else wc.reload();
   }
   stop(wid) { const wc = this.activeWebContents(wid); if (wc) wc.stop(); }
+  // ---------- tab groups ----------
+  // Groups live in memory for now: they are a window-level view state, not
+  // browsing data, so they are intentionally not written to the profile.
+  groupSequence() { return this._groupSequence || 0; }
+
+  createGroup(name) {
+    const id = crypto.randomUUID();
+    this._groupSequence = this.groupSequence() + 1;
+    if (!this.groups) this.groups = new Map();
+    this.groups.set(id, {
+      id,
+      name: name || ('Group ' + this.groupSequence()),
+      collapsed: false,
+      tabs: []
+    });
+    return this.groups.get(id);
+  }
+
+  // Group (or ungroup) the active tab. A second grouped tab joins the group
+  // its window already has, which is what makes grouping feel immediate
+  // instead of creating a group per tab.
+  groupActiveTab(wid, name) {
+    const rec = this.windows.get(wid);
+    const tab = rec && this.tabs.get(rec.active);
+    if (!tab) return null;
+    const existing = this.groupsForWindow(rec);
+    let group = existing[0] || null;
+    if (!group) group = this.createGroup(name);
+    this.addTabToGroup(group.id, tab);
+    this._sendFullState(wid);
+    return group;
+  }
+
+  groupsForWindow(rec) {
+    const out = [];
+    if (!this.groups) return out;
+    for (const group of this.groups.values()) {
+      if (group.tabs.some((id) => { const t = this.tabs.get(id); return t && t.winId === rec.wid; })) out.push(group);
+    }
+    return out;
+  }
+
+  addTabToGroup(groupId, tab) {
+    const group = this.groups && this.groups.get(groupId);
+    if (!group || !tab) return null;
+    this.removeTabFromGroups(tab.id);
+    group.tabs.push(tab.id);
+    tab.groupId = group.id;
+    return group;
+  }
+
+  removeTabFromGroups(tabId) {
+    if (!this.groups) return null;
+    for (const group of this.groups.values()) {
+      const index = group.tabs.indexOf(tabId);
+      if (index !== -1) {
+        group.tabs.splice(index, 1);
+        const tab = this.tabs.get(tabId);
+        if (tab) tab.groupId = null;
+        if (!group.tabs.length) this.groups.delete(group.id);
+        return group;
+      }
+    }
+    return null;
+  }
+
+  ungroupActiveTab(wid) {
+    const rec = this.windows.get(wid);
+    const tab = rec && this.tabs.get(rec.active);
+    if (!tab) return null;
+    const group = this.removeTabFromGroups(tab.id);
+    this._sendFullState(wid);
+    return group;
+  }
+
+  closeAllGroups(wid) {
+    const rec = this.windows.get(wid);
+    if (!rec) return 0;
+    let closed = 0;
+    for (const group of this.groupsForWindow(rec)) {
+      for (const tabId of group.tabs.slice()) {
+        const tab = this.tabs.get(tabId);
+        if (tab && tab.winId === rec.wid) { this.closeTab(tabId); closed++; }
+      }
+      this.groups.delete(group.id);
+    }
+    this._sendFullState(wid);
+    return closed;
+  }
+
+  focusGroup(wid, groupId) {
+    const rec = this.windows.get(wid);
+    const group = this.groups && this.groups.get(groupId);
+    if (!rec || !group) return false;
+    const tabId = group.tabs.find((id) => { const t = this.tabs.get(id); return t && t.winId === rec.wid; });
+    if (!tabId) return false;
+    this.activateTab(rec.wid, tabId);
+    return true;
+  }
+
+  // Serializable view for the menu submenu.
+  listGroups(wid) {
+    const rec = this.windows.get(wid);
+    if (!rec) return [];
+    return this.groupsForWindow(rec).map((group) => ({
+      id: group.id,
+      name: group.name,
+      collapsed: !!group.collapsed,
+      tabs: group.tabs.map((id) => { const t = this.tabs.get(id); return t ? { id: t.id, title: t.title, url: t.url } : null; }).filter(Boolean)
+    }));
+  }
+
   setZoom(wid, delta) {
     const wc = this.activeWebContents(wid);
     if (!wc) return;
-    if (delta === 0) { wc.setZoomLevel(0); return; }
+    if (delta === 0) { wc.setZoomLevel(0); this._sendFullState(wid); return; }
     const cur = wc.getZoomLevel();
     const next = Math.max(-4, Math.min(4, cur + delta));
     wc.setZoomLevel(next);
+    // The menu's zoom row reads the zoom factor out of the tab snapshot, so the
+    // shell has to hear about the change immediately.
+    this._sendFullState(wid);
   }
   toggleMute(tabId) {
     const tab = this.tabs.get(tabId);
@@ -581,8 +703,10 @@ class TabsManager {
     return {
       id: tab.id, url: tab.url, title: tab.title, favicon: tab.favicon,
       loading: tab.loading, muted: tab.muted, audio: !!tab.audio,
+      zoom: (() => { try { return tab.view.webContents.getZoomFactor(); } catch (_) { return 1; } })(),
       adCount: adblock.countFor(tab.view.webContents.id),
       private: tab.private,
+      groupId: tab.groupId || null,
       security: classifyUrl(tab.url),
       canBack, canForward
     };
@@ -606,6 +730,12 @@ class TabsManager {
 
   shellContentsForWindow(win) {
     for (const rec of this.windows.values()) if (rec.win === win) return this._shellWc(rec);
+    return null;
+  }
+
+  windowIdFor(win) {
+    if (!win) return null;
+    for (const rec of this.windows.values()) if (rec.win === win) return rec.wid;
     return null;
   }
 

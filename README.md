@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <strong>Current package version:</strong> 1.0.4 · <strong>Configured installer target:</strong> Windows x64
+  <strong>Current package version:</strong> 1.0.5 · <strong>Configured installer target:</strong> Windows x64
 </p>
 
 > **Project status:** Prism is an actively changing desktop-browser project. Features described below reflect the current source tree; a successful build, live search-provider integration, store search, or security verdict must be tested in the actual packaged app before being treated as production-ready.

@@ -32,6 +32,7 @@ class SecureStore {
     this.master = null;
     this.keyring = 'uninitialized';
     this.cryptoReady = false;
+    this.locked = false;
     this.buffers = new Map(); // name -> data pending write
     this.__t = new Map();     // name -> debounce timer
   }
@@ -45,8 +46,17 @@ class SecureStore {
   // Phase 2: must be called after app.whenReady().
   initCrypto() {
     if (this.cryptoReady) return;
+    this.locked = false;
     this._loadMasterKey();
     this.cryptoReady = true;
+  }
+
+  // Locking drops the master key and cached plaintext from memory. Because the
+  // key material itself lives in the OS keyring, the next real access
+  // transparently unwraps it again instead of leaving the app unable to read
+  // its own stores.
+  _ensureCrypto() {
+    if (!this.cryptoReady && this.locked) this.initCrypto();
   }
 
   _isHexKey(buf) {
@@ -140,6 +150,7 @@ class SecureStore {
 
   // Load a collection; returns fallback (deep-cloned) when missing/corrupt.
   load(name, fallback) {
+    this._ensureCrypto();
     if (!this.cryptoReady) {
       console.warn('[securestore] load(' + name + ') before initCrypto; using fallback');
       return fallback;
@@ -160,6 +171,7 @@ class SecureStore {
   // Save a collection. Debounced: write at most once per 400ms unless force.
   save(name, data, force = false) {
     this.buffers.set(name, data);
+    this._ensureCrypto();
     if (!this.cryptoReady) {
       console.warn('[securestore] save(' + name + ') before initCrypto; buffered only');
       return;
@@ -188,9 +200,23 @@ class SecureStore {
     for (const [name] of this.buffers) this.save(name, this.buffers.get(name), true);
   }
 
+  // "Lock the vault" from the ⋮ menu. Everything pending is written first, then
+  // the in-memory master key and any cached plaintext are dropped: the next
+  // load() re-reads from the OS keyring. Nothing is persisted as plaintext.
+  lock() {
+    this.flushAll();
+    this.buffers.clear();
+    this.key = null;
+    this.master = null;
+    this.cryptoReady = false;
+    this.locked = true;
+    return this.status();
+  }
+
   status() {
     return {
       encrypted: this.cryptoReady && !!this.master,
+      locked: !!this.locked && !this.cryptoReady,
       keyring: this.keyring,
       algorithm: 'AES-256-GCM',
       keyWrapping: this.keyring === 'os-keyring' || this.keyring === 'os-keyring-migrated'

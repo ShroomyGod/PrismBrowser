@@ -44,7 +44,7 @@ function template() {
             await require('./security').refresh();
           } },
         { type: 'separator' },
-        { role: 'quit', label: 'Quit Prism' }
+        { role: 'quit', label: 'Quit Prism', accelerator: 'CmdOrCtrl+Shift+Q' }
       ]
     },
     {
@@ -59,7 +59,22 @@ function template() {
             if (rec && rec.active) tabs.closeTab(rec.active);
           }) },
         { type: 'separator' },
-        { label: 'Reopen Closed Tab', accelerator: 'CmdOrCtrl+Shift+T', click: () => act((wid) => tabs.reopenClosedTab(wid)) }
+        { label: 'Reopen Closed Tab', accelerator: 'CmdOrCtrl+Shift+T', click: () => act((wid) => tabs.reopenClosedTab(wid)) },
+        { type: 'separator' },
+        { label: 'Print...', accelerator: 'CmdOrCtrl+P', click: () => act((wid) => printActiveTab(wid)) },
+        { label: 'Save Page As...', accelerator: 'CmdOrCtrl+S', click: () => act((wid) => saveActiveTab(wid)) }
+      ]
+    },
+    {
+      label: 'Window',
+      submenu: [
+        { label: 'Close Window', accelerator: 'CmdOrCtrl+Shift+W', click: () => {
+            const wid = focused();
+            const rec = wid && tabs && tabs.windowRecord(wid);
+            if (rec && rec.win && !rec.win.isDestroyed()) rec.win.close();
+          } },
+        { type: 'separator' },
+        { label: 'Full Screen', accelerator: 'F11', click: () => act((wid) => toggleFullScreen(wid)) }
       ]
     },
     {
@@ -69,7 +84,12 @@ function template() {
         { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' },
         { type: 'separator' },
         { label: 'Find in Page', accelerator: 'CmdOrCtrl+F', click: () => sendCmd('open-find') },
-        { label: 'Focus Address Bar', accelerator: 'CmdOrCtrl+L', click: () => sendCmd('focus-omnibox') }
+        { label: 'Find Again', accelerator: 'CmdOrCtrl+G', click: () => sendCmd('find-next') },
+        { label: 'Find Backwards', accelerator: 'CmdOrCtrl+Shift+G', click: () => sendCmd('find-prev') },
+        { type: 'separator' },
+        { label: 'Focus Address Bar', accelerator: 'CmdOrCtrl+L', click: () => sendCmd('focus-omnibox') },
+        { label: 'Search the Web', accelerator: 'CmdOrCtrl+K', click: () => sendCmd('search-web') },
+        { label: 'Copy Page Address', accelerator: 'CmdOrCtrl+Shift+C', click: () => act((wid) => copyPageAddress(wid)) }
       ]
     },
     {
@@ -84,7 +104,8 @@ function template() {
         { type: 'separator' },
         { label: 'Bookmarks Bar', accelerator: 'CmdOrCtrl+Shift+B', click: () => sendCmd('toggle-bookmarks-bar') },
         { type: 'separator' },
-        { label: 'Developer Tools', accelerator: 'F12', click: () => act((wid) => tabs.toggleDevTools(wid)) }
+        { label: 'Developer Tools', accelerator: 'F12', click: () => act((wid) => tabs.toggleDevTools(wid)) },
+        { label: 'Toggle Developer Tools', accelerator: 'CmdOrCtrl+Shift+I', click: () => act((wid) => tabs.toggleDevTools(wid)) }
       ]
     },
     {
@@ -96,7 +117,7 @@ function template() {
         { label: 'Show History', accelerator: 'CmdOrCtrl+H', click: () => openPrismPage('history') },
         { label: 'Show Downloads', accelerator: 'CmdOrCtrl+J', click: () => openPrismPage('downloads') },
         { type: 'separator' },
-        { label: 'Clear Browsing Data', accelerator: 'CmdOrCtrl+Shift+Delete', click: () => openPrismPage('settings#clear') }
+        { label: 'Clear Browsing Data', accelerator: 'CmdOrCtrl+Shift+Delete', click: () => openPrismPage('clear') }
       ]
     },
     {
@@ -122,17 +143,66 @@ function template() {
         { label: 'Duplicate Tab', accelerator: 'CmdOrCtrl+Shift+D', click: () => act((wid) => {
             const rec = tabs.windowRecord(wid);
             if (rec && rec.active) tabs.duplicateTab(wid, rec.active);
-          }) }
+          }) },
+        { type: 'separator' },
+        { label: 'Move Tab Left', accelerator: 'CmdOrCtrl+Shift+Left', click: () => act((wid) => moveActiveTab(wid, -1)) },
+        { label: 'Move Tab Right', accelerator: 'CmdOrCtrl+Shift+Right', click: () => act((wid) => moveActiveTab(wid, 1)) }
       ]
     },
     {
       label: 'Help',
       submenu: [
+        { label: 'Keyboard Shortcuts', accelerator: 'CmdOrCtrl+Shift+K', click: () => openPrismPage('shortcuts') },
+        { type: 'separator' },
         { label: 'Prism Search: About the Engine', click: () => openPrismPage('search') },
         { label: 'Extensions Page', click: () => openPrismPage('extensions') }
       ]
     }
   ];
+}
+
+// ---------- accelerators shared with the in-app ⋮ menu ----------
+// These mirror the ⋮ menu handlers in src/main/shell-ipc.js so the native menu
+// and the in-app menu never drift apart in what they actually do.
+function printActiveTab(wid) {
+  const wc = tabs && tabs.activeWebContents(wid);
+  if (!wc) return;
+  wc.print({ silent: false, printBackground: true }, (ok, reason) => {
+    if (!ok && reason && reason !== 'cancelled') {
+      console.error('[menus] print failed:', reason);
+    }
+  });
+}
+
+function saveActiveTab(wid) {
+  const wc = tabs && tabs.activeWebContents(wid);
+  if (!wc) return;
+  const url = wc.getURL();
+  if (!/^https?:/i.test(url)) {
+    dialog.showMessageBox({ type: 'info', message: 'This page cannot be saved.', detail: 'Internal Prism pages have nothing to download.' });
+    return;
+  }
+  wc.downloadURL(url);
+}
+
+function toggleFullScreen(wid) {
+  const rec = wid && tabs && tabs.windowRecord(wid);
+  if (!rec || !rec.win || rec.win.isDestroyed()) return;
+  rec.win.setFullScreen(!rec.win.isFullScreen());
+}
+
+function copyPageAddress(wid) {
+  const tab = tabs && tabs.activeTab(wid);
+  if (tab && tab.url) clipboard.writeText(tab.url);
+}
+
+function moveActiveTab(wid, dir) {
+  const rec = wid && tabs && tabs.windowRecord(wid);
+  if (!rec) return;
+  const from = rec.tabs.indexOf(rec.active);
+  if (from === -1) return;
+  const to = Math.max(0, Math.min(rec.tabs.length - 1, from + dir));
+  if (to !== from) tabs.moveTab(wid, from, to);
 }
 
 function cycleTab(wid, dir) {

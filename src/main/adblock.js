@@ -20,21 +20,28 @@ function escapeRe(s) {
 function patternToRegex(pattern) {
   let re = '';
   let i = 0;
-  if (pattern.startsWith('||')) { re += '^[a-z][a-z0-9+.-]*:\\/\\/(?:[^\\/?#]+\\.)?'; i = 2; }
-  else if (pattern.startsWith('|')) { re += '^'; i = 1; }
+  let anchored = false;
+  if (pattern.startsWith('||')) { re += '^[a-z][a-z0-9+.-]*:\\/\\/(?:[^\\/?#]+\\.)?'; i = 2; anchored = true; }
+  else if (pattern.startsWith('|')) { re += '^'; i = 1; anchored = true; }
+  // A trailing "|" is the end-of-URL anchor. Every OTHER "|" in an Adblock
+  // Plus pattern is a LITERAL character, and EasyList still ships legacy rules
+  // that rely on that: "/addyn|*|adtech;" and "/adiframe|*|adtech;" target ad
+  // server URLs containing a literal pipe. Compiling an interior "|" as regex
+  // alternation turned those into match-everything rules (the empty ".*" branch),
+  // so every stylesheet and image request was cancelled and web pages loaded as
+  // unstyled HTML with broken images.
+  const end = pattern.endsWith('|') && pattern.length > i + 1 ? pattern.length - 1 : pattern.length;
   let body = '';
-  for (; i < pattern.length; i++) {
+  for (; i < end; i++) {
     const ch = pattern[i];
     if (ch === '*') body += '.*';
     else if (ch === '^') body += '(?:[^\\w\\-.%]|$)';
+    else if (ch === '|') body += '\\|';
     else if (ch === '$') body += '\\$';
     else body += escapeRe(ch);
   }
-  if (body.endsWith('|')) body = body.slice(0, -1) + '$';
-  else if (pattern.startsWith('|') === false && pattern.startsWith('||') === false) {
-    // unanchored: match anywhere
-  }
   re += body;
+  if (end < pattern.length) re += '$';
   try { return new RegExp(re, 'i'); } catch (e) { return null; }
 }
 
@@ -166,7 +173,15 @@ function parseFilterList(text, rs) {
     if (raw.startsWith('||') === false && raw.startsWith('|') === false && !/[.\/*]/.test(raw)) continue;
     const regex = patternToRegex(raw);
     if (!regex) continue;
-    const rule = { regex, options: options || parseOptions(''), domain: anchoredDomain(raw) };
+    const rule = {
+      regex,
+      options: options || parseOptions(''),
+      domain: anchoredDomain(raw),
+      // Anchored patterns are pinned to a URL prefix, so a match is specific by
+      // construction. match() uses this to keep broad unanchored rules from
+      // cancelling whole documents, stylesheets, or fonts.
+      anchored: raw.startsWith('|')
+    };
     if (allow) rs.allow.push(rule);
     else rs.block.push(rule);
   }
@@ -305,6 +320,13 @@ class Adblocker {
       // main-frame request.
       if (resourceType === 'document' && (!r.domain ||
           !(r.domain === reqHost || reqHost.endsWith('.' + r.domain)))) continue;
+      // Same reasoning for page styling: an unanchored rule that names no
+      // resource type must never cancel a stylesheet or font request. Losing
+      // one ad stylesheet is a cosmetic miss; losing a site's CSS renders the
+      // whole page unstyled. Rules that explicitly say $stylesheet/$font, and
+      // anchored ||host^ rules, still apply.
+      if ((resourceType === 'stylesheet' || resourceType === 'font') &&
+          !r.anchored && o.types === 'all') continue;
       if (o.thirdParty !== null) {
         const isThird = selfSite ? reqHost !== selfSite && !reqHost.endsWith('.' + selfSite) && !selfSite.endsWith('.' + reqHost) : true;
         if (o.thirdParty !== isThird) continue;

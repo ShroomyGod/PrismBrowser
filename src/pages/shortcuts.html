@@ -1,0 +1,110 @@
+<!doctype html>
+<html data-theme="dark">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="/assets/icon-32.png">
+<link rel="stylesheet" href="/common.css">
+<title>Keyboard shortcuts - Prism</title>
+<style>
+  .cols { columns: 2; column-gap: 22px; }
+  .group { break-inside: avoid; margin-bottom: 18px; }
+  .group h3 { margin: 0 0 6px; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; color: var(--dim); }
+  .sc { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; padding: 6px 0; border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent); }
+  .sc:last-child { border-bottom: none; }
+  .sc .what { font-size: 13px; }
+  @media (max-width: 640px) { .cols { columns: 1; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topnav">
+    <a href="/newtab">New Tab</a>
+    <a href="/history">History</a>
+    <a href="/downloads">Downloads</a>
+    <a href="/extensions">Extensions</a>
+    <a href="/shortcuts" class="on">Shortcuts</a>
+    <a href="/settings">Settings</a>
+  </div>
+  <div class="page-head">
+    <img class="wordmark" src="/assets/wordmark@2x.png" alt="Prism">
+    <h1>Keyboard shortcuts</h1>
+  </div>
+  <div class="card">
+    <div class="muted" style="margin-bottom:12px">
+      The same accelerators also appear next to their items in the main menu (Ctrl/&#8984;).
+    </div>
+    <div class="cols" id="cols"></div>
+  </div>
+</div>
+<script src="/common.js"></script>
+<script>
+(async function () {
+  await PrismUI.boot();
+
+  // Kept in one table so this page and test/menu-items.test.js can agree on what
+  // Prism claims to support.
+  const GROUPS = [
+    ['Tabs and windows', [
+      ['Open a new tab', 'Ctrl+T'],
+      ['Close the current tab', 'Ctrl+W'],
+      ['Reopen the last closed tab', 'Ctrl+Shift+T'],
+      ['Open a new window', 'Ctrl+N'],
+      ['Open a new private window', 'Ctrl+Shift+N'],
+      ['Next tab', 'Ctrl+Tab'],
+      ['Previous tab', 'Ctrl+Shift+Tab'],
+      ['Move tab left or right', 'Ctrl+Shift+Left / Right'],
+      ['Mute the current tab', 'Ctrl+M'],
+      ['Duplicate the current tab', 'Ctrl+Shift+D']
+    ]],
+    ['Navigation', [
+      ['Back', 'Alt+Left'],
+      ['Forward', 'Alt+Right'],
+      ['Reload', 'Ctrl+R'],
+      ['Hard reload', 'Ctrl+Shift+R'],
+      ['Focus the address bar', 'Ctrl+L'],
+      ['Search the web from the address bar', 'Ctrl+K'],
+      ['Copy the page address', 'Ctrl+Shift+C']
+    ]],
+    ['Page', [
+      ['Find on this page', 'Ctrl+F'],
+      ['Find again', 'Ctrl+G'],
+      ['Find backwards', 'Ctrl+Shift+G'],
+      ['Zoom in', 'Ctrl+='],
+      ['Zoom out', 'Ctrl+-'],
+      ['Reset zoom to 100%', 'Ctrl+0'],
+      ['Full screen', 'F11'],
+      ['Print', 'Ctrl+P'],
+      ['Save page as', 'Ctrl+S']
+    ]],
+    ['Browser', [
+      ['Bookmark this page', 'Ctrl+D'],
+      ['Show bookmarks bar', 'Ctrl+Shift+B'],
+      ['Bookmark manager', 'Ctrl+Shift+O'],
+      ['History', 'Ctrl+H'],
+      ['Downloads', 'Ctrl+J'],
+      ['Delete browsing data', 'Ctrl+Shift+Delete'],
+      ['Settings', 'Ctrl+,'],
+      ['Developer tools', 'F12 or Ctrl+Shift+I'],
+      ['Keyboard shortcuts', 'Ctrl+Shift+K'],
+      ['Close the window', 'Ctrl+Shift+W'],
+      ['Quit Prism', 'Ctrl+Shift+Q']
+    ]]
+  ];
+
+  const cols = document.getElementById('cols');
+  for (const [title, rows] of GROUPS) {
+    const group = PrismUI.el('div', 'group');
+    group.appendChild(PrismUI.el('h3', null, title));
+    for (const [what, keys] of rows) {
+      const line = PrismUI.el('div', 'sc');
+      line.appendChild(PrismUI.el('span', 'what', what));
+      const key = PrismUI.el('span', 'kbd', keys);
+      line.appendChild(key);
+      group.appendChild(line);
+    }
+    cols.appendChild(group);
+  }
+})();
+</script>
+</body>
+</html>

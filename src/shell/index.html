@@ -130,26 +130,14 @@
       <button class="pop-link" id="theme-accessibility">Accessibility settings</button>
     </div>
 
-    <!-- Main menu -->
-    <div id="menu-panel" style="display:none">
-      <button class="mi" data-act="new-tab"><svg viewBox="0 0 16 16" width="15" height="15"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></svg>New tab</button>
-      <button class="mi" data-act="private"><svg viewBox="0 0 16 16" width="15" height="15"><path d="M2.5 7.5h11M5 7.5L3.6 4.2a1 1 0 0 1 .9-1.4h7a1 1 0 0 1 .9 1.4L11 7.5" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round"/><path d="M4 10.5h3m2 0h3" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round"/></svg>New private window</button>
-      <div class="msep"></div>
-      <button class="mi" data-act="history"><svg viewBox="0 0 16 16" width="15" height="15"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M8 4.5V8l2.5 1.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" fill="none"/></svg>History</button>
-      <button class="mi" data-act="bookmarks"><svg viewBox="0 0 16 16" width="15" height="15"><path d="M4 2.5h8V14l-4-2.6L4 14z" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linejoin="round"/></svg>Bookmarks</button>
-      <button class="mi" data-act="downloads"><svg viewBox="0 0 16 16" width="15" height="15"><path d="M8 2.5v7M5 7l3 3 3-3M3 13h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>Downloads</button>
-      <button class="mi" data-act="passwords"><svg viewBox="0 0 16 16" width="15" height="15"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M5.5 7V5.5a2.5 2.5 0 0 1 5 0V7" stroke="currentColor" stroke-width="1.3" fill="none"/><circle cx="8" cy="10.2" r="1" fill="currentColor"/></svg>Passwords</button>
-      <button class="mi" data-act="extensions"><svg viewBox="0 0 16 16" width="15" height="15"><path d="M6.5 2.5h3v2a1.5 1.5 0 1 0 0 2v2h2a1.5 1.5 0 1 1-2 0h-2v-2h-2a1.5 1.5 0 1 0 0-3z" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linejoin="round" transform="translate(1.5 1.5)"/></svg>Extensions</button>
-      <button class="mi" data-act="settings"><svg viewBox="0 0 16 16" width="15" height="15"><circle cx="8" cy="8" r="2.2" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M8 1.8v2M8 12.2v2M1.8 8h2M12.2 8h2M3.6 3.6l1.4 1.4M11 11l1.4 1.4M12.4 3.6L11 5M5 11l-1.4 1.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" fill="none"/></svg>Settings</button>
-      <button class="mi" data-act="privacy"><svg viewBox="0 0 16 16" width="15" height="15"><path d="M8 1.8l5 1.8v3.6c0 3.3-2.1 5.9-5 7-2.9-1.1-5-3.7-5-7V3.6z" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linejoin="round"/></svg>Privacy dashboard</button>
-      <div class="msep"></div>
-      <button class="mi" data-act="search-home"><svg viewBox="0 0 16 16" width="15" height="15"><circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/></svg>Prism Search</button>
-      <button class="mi" data-act="update-lists"><svg viewBox="0 0 16 16" width="15" height="15"><path d="M13 8a5 5 0 1 1-1.6-3.7M13 2.5V5h-2.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>Update protection lists</button>
-      <button class="mi" data-act="check-update"><svg viewBox="0 0 16 16" width="15" height="15"><path d="M8 2.5v7M5 7l3 3 3-3M3 13h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>Check for updates</button>
-      <button class="mi" data-act="about"><svg viewBox="0 0 16 16" width="15" height="15"><circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M8 7.2v3.6M8 4.8v.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/></svg>About Prism Browser</button>
-      <div class="msep"></div>
-      <button class="mi" data-act="bookmarks-bar" id="mi-bookmarksbar">Show bookmarks bar</button>
-    </div>
+    <!-- Main menu: rendered from src/shell/menu-items.js so the tree and its
+         action wiring stay in one place (see test/menu-items.test.js). -->
+    <div id="menu-panel" style="display:none"></div>
+
+    <!-- Submenu that flies out to the left of a parent menu item. Kept
+         outside #menu-panel so closing the parent does not tear it down
+         mid-interaction; it is included in the reported shell extent. -->
+    <div id="menu-sub" style="display:none"></div>
 
     <!-- Extensions dropdown (the toolbar "puzzle piece"). Lists installed extensions
      and opens each one's management page; options page popups are a known
@@ -187,6 +175,7 @@
 
     <div id="load-progress" style="display:none"></div>
   </div>
+  <script src="./menu-items.js"></script>
   <script src="./shell.js"></script>
 </body>
 </html>
