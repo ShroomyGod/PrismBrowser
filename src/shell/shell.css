@@ -26,25 +26,15 @@
   --text-faint: #6e6e6e;
   --accent: #7c9cbf;
   --accent-soft: rgba(124, 156, 191, 0.16);
+  --gradient-a: transparent;
+  --gradient-b: transparent;
+  --gradient-c: transparent;
   --danger: #d9534f;
   --ok: #6f9f6f;
+  --chrome-gradient: none;
+  --motion-duration: 8s;
   --tab-w: 220px;
   --chrome-h: 84px;
-}
-html[data-theme="light"] {
-  --bg: #ffffff;
-  --bg2: #f7f7f7;
-  --bg3: #efefef;
-  --bg4: #e4e4e4;
-  --line: #dcdcdc;
-  --line-soft: #e8e8e8;
-  --text: #1c1c1c;
-  --text-dim: #616161;
-  --text-faint: #8a8a8a;
-  --accent: #3f6f9f;
-  --accent-soft: rgba(63, 111, 159, 0.12);
-  --danger: #c0392b;
-  --ok: #3f7a46;
 }
 /* ---------- private / incognito chrome ----------
  * shell.js sets body.private when the snapshot reports private:true. It
@@ -67,9 +57,9 @@ body.private {
 }
 body.private #chrome-top,
 body.private #toolbar,
-body.private #tabstrip { background: var(--bg2); }
+body.private #tabstrip { background-color: var(--bg2); background-image: var(--chrome-gradient); }
 body.private .tab { color: var(--text-dim); }
-body.private .tab.active { background: var(--bg3); color: var(--text); }
+body.private .tab.active { background-color: var(--bg3); background-image: linear-gradient(135deg, var(--gradient-a, transparent), var(--gradient-b, transparent)); color: var(--text); }
 body.private .tab.active::before {
   content: ''; position: absolute; left: 0; right: 0; top: 0; height: 2px;
   background: var(--accent); border-radius: 2px 2px 0 0;
@@ -77,30 +67,57 @@ body.private .tab.active::before {
 body.private #omni-dropdown,
 body.private #menu-panel,
 body.private #shield-pop,
-body.private #findbar { border-color: var(--line); }
+body.private #findbar,
+body.private #ext-pop,
+body.private #theme-pop { border-color: var(--line); }
 * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
 html, body { height: 100%; overflow: hidden; }
 body {
   font-family: "Segoe UI", system-ui, sans-serif;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--ui-scale, 1));
   /* Transparent: the shell view only paints the chrome; below it, the page
      (a native view underneath) must show through around open popups. */
   background: transparent;
   color: var(--text);
+  transition: color .18s ease;
 }
 #chrome { display: flex; flex-direction: column; height: 100%; position: relative; }
 body.html-fullscreen #chrome > * { display: none !important; }
 
 button { background: none; border: none; color: inherit; font: inherit; cursor: pointer; }
-button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+html[data-focus-visible="subtle"] :focus-visible { outline-width: 2px; outline-offset: 1px; }
+html[data-contrast="high"] { --line: var(--text); --line-soft: var(--text); --text-dim: var(--text); --text-faint: var(--text); }
+html[data-contrast="high"] button, html[data-contrast="high"] input, html[data-contrast="high"] select { border-width: 2px; }
+html[data-large-targets="true"] button { min-width: 40px; min-height: 40px; }
+html[data-large-targets="true"] .ibtn { width: 38px; height: 38px; }
+html[data-large-targets="true"] .wcbtn { min-height: 40px; }
+html[data-large-targets="true"] .switch { width: 46px; height: 26px; }
+html[data-large-targets="true"] .slider:before { width: 18px; height: 18px; }
+html[data-large-targets="true"] .switch input:checked + .slider:before { transform: translateX(19px); }
+html[data-large-targets="true"] #omni-input { font-size: 15px; }
+html[data-motion="shimmer"] #chrome-top::after,
+html[data-motion="wave"] #chrome-top::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .2;
+  background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,.35) 50%, transparent 60%);
+  background-size: 200% 100%; animation: prism-gradient-shimmer var(--motion-duration) linear infinite; z-index: 1;
+}
+@keyframes prism-gradient-shimmer { to { background-position: -200% 0; } }
 
 /* ---------- top chrome: everything the page must sit below ---------- */
-#chrome-top { flex: none; position: relative; z-index: 30; background: var(--bg2); }
+#chrome-top { flex: none; position: relative; z-index: 30; background-color: var(--bg2); background-image: var(--chrome-gradient); background-size: 220% 220%; }
+html[data-motion="drift"] #chrome-top { animation: prism-gradient-drift var(--motion-duration) ease-in-out infinite alternate; }
+html[data-motion="breathe"] #chrome-top { animation: prism-gradient-breathe var(--motion-duration) ease-in-out infinite; }
+html[data-motion="pulse"] #chrome-top { animation: prism-gradient-pulse calc(var(--motion-duration) * .75) ease-in-out infinite; }
+html[data-motion="wave"] #chrome-top { background-size: 250% 100%; animation: prism-gradient-drift calc(var(--motion-duration) * .7) linear infinite alternate; }
+@keyframes prism-gradient-drift { to { background-position: 100% 80%; } }
+@keyframes prism-gradient-breathe { 50% { background-position: 70% 30%; } }
+@keyframes prism-gradient-pulse { 50% { filter: brightness(1.08); } }
 
 /* ---------- tab strip ---------- */
 #tabstrip {
   height: 40px; display: flex; align-items: flex-end; gap: 2px;
-  padding: 0 0 0 8px; background: var(--bg2);
+  padding: 0 0 0 8px; background-color: transparent; background-image: var(--chrome-gradient);
   -webkit-app-region: drag; flex: none;
 }
 #tabs { display: flex; align-items: flex-end; height: 40px; max-width: calc(100% - 140px); overflow: hidden; }
@@ -121,7 +138,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   padding: 0 6px 0 9px; border-radius: 8px 8px 0 0; cursor: default;
   color: var(--text-dim); position: relative;
 }
-.tab.active { background: var(--bg3); color: var(--text); }
+.tab.active { background-color: var(--bg3); background-image: linear-gradient(135deg, var(--gradient-a, transparent), var(--gradient-b, transparent)); color: var(--text); }
 .tab:hover:not(.active) { background: var(--bg4); }
 .tab .fav { width: 16px; height: 16px; flex: none; border-radius: 3px; }
 .tab .fav-fallback { width: 16px; height: 16px; flex: none; opacity: .85; }
@@ -144,7 +161,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 /* ---------- toolbar ---------- */
 #toolbar {
   height: 44px; flex: none; display: flex; align-items: center; gap: 3px;
-  padding: 0 8px; background: var(--bg2); box-shadow: 0 1px 0 var(--line);
+  padding: 0 8px; background-color: transparent; background-image: var(--chrome-gradient); box-shadow: 0 1px 0 var(--line);
 }
 .ibtn {
   width: 30px; height: 30px; border-radius: 7px; display: flex;
@@ -194,14 +211,19 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   from { opacity: 0; transform: translateY(-5px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-#omni-dropdown, #menu-panel, #shield-pop, #ext-pop {
+#omni-dropdown, #menu-panel, #shield-pop, #ext-pop, #theme-pop {
   animation: prism-drop-in .13s ease-out;
 }
 /* The find bar and toasts slide from the edge they are anchored to. */
 #findbar { animation: prism-drop-in .13s ease-out; }
 
+html[data-reduce-motion="reduce"] *,
+html[data-reduce-motion="reduce"] *:before,
+html[data-reduce-motion="reduce"] *:after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
 @media (prefers-reduced-motion: reduce) {
-  *, *:before, *:after {
+  html[data-reduce-motion="system"] *,
+  html[data-reduce-motion="system"] *:before,
+  html[data-reduce-motion="system"] *:after {
     animation-duration: .001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: .001ms !important;
@@ -227,7 +249,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
  * JS aligns the omnibox dropdown to the omnibox itself.
  * Opaque + isolated: they must paint solid above the page view, never let
  * page content bleed through or overlap them. */
-#omni-dropdown, #menu-panel, #shield-pop, #ext-pop {
+#omni-dropdown, #menu-panel, #shield-pop, #ext-pop, #theme-pop {
   position: absolute; z-index: 50; background: var(--bg2);
   border: 1px solid var(--line); border-radius: 10px;
   box-shadow: 0 10px 34px rgba(0,0,0,.55); overflow: hidden;
@@ -274,6 +296,13 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 #ext-pop {
   top: var(--chrome-h); right: 8px; width: 268px; padding: 11px 12px;
 }
+#theme-pop { top: var(--chrome-h); right: 92px; width: 260px; padding: 12px; }
+#theme-pop .theme-mode { display: flex; gap: 5px; margin: 7px 0 10px; }
+#theme-pop .theme-mode button { flex: 1; border: 1px solid var(--line); border-radius: 7px; padding: 6px 3px; font-size: 11px; background: var(--bg3); }
+#theme-pop .theme-mode button:hover { border-color: var(--accent); }
+#theme-pop .theme-label { display: block; color: var(--text-dim); font-size: 11px; margin: 7px 0 4px; }
+#theme-pop input[type="range"], #theme-pop select { width: 100%; accent-color: var(--accent); }
+#theme-pop select { color: var(--text); background: var(--bg3); border: 1px solid var(--line); border-radius: 7px; padding: 5px; }
 #ext-btn { position: relative; }
 #ext-list { max-height: 260px; overflow-y: auto; margin-bottom: 4px; }
 .ext-row {

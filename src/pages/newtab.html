@@ -6,7 +6,6 @@
 <link rel="stylesheet" href="/common.css">
 <title>New Tab</title>
 <style>
-  body { background: var(--bg); }
   .hero { display: flex; flex-direction: column; align-items: center; padding-top: 10vh; }
   .hero .mark { width: 210px; max-width: 64vw; height: auto; margin-bottom: 20px; }
   .tagline { color: var(--dim); margin-bottom: 26px; font-size: 13px; max-width: 520px; text-align: center; line-height: 1.5; }
@@ -19,6 +18,11 @@
   .searchbox svg { color: var(--dim); flex: none; }
   .searchbox input { flex: 1; background: none; border: none; color: var(--text); font-size: 16px; user-select: text; }
   .searchbox input:focus { outline: none; }
+  .searchbox input:focus-visible { outline: 3px solid var(--accent); outline-offset: 5px; }
+  :root[data-contrast="high"] .searchbox, :root[data-contrast="high"] .tile { border-width: 2px; }
+  :root[data-large-targets="true"] .tile { min-height: 92px; min-width: 112px; }
+  :root[data-large-targets="true"] .quick button { min-height: 44px; }
+  :root[data-focus-visible="strong"] :focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
   .tiles { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 38px; width: min(680px, 95%); }
   .tile {
     display: flex; flex-direction: column; align-items: center; gap: 8px; width: 104px;

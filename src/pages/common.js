@@ -4,10 +4,33 @@
 const PrismUI = {
   async boot(themeVariant) {
     try {
+      // Every internal page shares generated theme/accessibility tokens, not
+      // just Settings. Load once on-demand to keep the common page bootstrap
+      // backwards-compatible with existing internal HTML.
+      if (!window.PrismTheme) {
+        await new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = 'prism://settings/shared/theme-engine.js';
+          script.onload = resolve;
+          script.onerror = reject;
+          document.head.appendChild(script);
+        });
+      }
       const s = await window.prism.getSettings();
-      let theme = s.appearance.theme || 'dark';
-      if (theme === 'system') theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-      document.documentElement.dataset.theme = theme;
+      let activeAppearance = s.appearance || {};
+      const applyAppearance = (appearance) => {
+        activeAppearance = appearance || {};
+        let current = activeAppearance.theme || 'dark';
+        if (current === 'system') current = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        if (window.PrismTheme) window.PrismTheme.apply(document.documentElement, Object.assign({}, activeAppearance, { theme: current }));
+        else document.documentElement.dataset.theme = current;
+      };
+      applyAppearance(activeAppearance);
+      if (window.prism.onSettingsChanged) window.prism.onSettingsChanged((next) => applyAppearance(next.appearance || {}));
+      const media = matchMedia('(prefers-color-scheme: dark)');
+      media.addEventListener && media.addEventListener('change', () => {
+        if (activeAppearance.theme === 'system') applyAppearance(activeAppearance);
+      });
       return s;
     } catch (_) { return null; }
   },

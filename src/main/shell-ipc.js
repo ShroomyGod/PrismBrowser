@@ -13,7 +13,6 @@ const prismSearchWeb = require('./prism-search-web');
 const crawler = require('./crawler');
 const { index } = require('./index-store');
 const menus = require('./menus');
-const vpngate = require('./vpngate');
 
 function registerIpc(tabs) {
   // The shell lives in its own WebContentsView, so resolve the owning
@@ -181,8 +180,6 @@ function registerIpc(tabs) {
   ipcMain.handle('prism:search:url', (_e, { q }) =>
     settings.engineSearchUrl(settings.all().search.defaultEngine, String(q || '')));
   ipcMain.handle('prism:search:stats', () => prismSearch.stats());
-  ipcMain.handle('prism:vpn:directory', (_e, opts) => vpngate.directory(!!(opts && opts.refresh)));
-  ipcMain.handle('prism:vpn:save', (_e, { host }) => vpngate.saveProfile(host));
   ipcMain.on('prism:crawl:run', (_e, { maxPages }) => { crawler.run({ maxPages }); });
   ipcMain.on('prism:crawl:stop', () => crawler.stop());
   ipcMain.handle('prism:crawl:status', () => crawler.status());

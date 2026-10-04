@@ -24,17 +24,70 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
+const updateIdentity = require('./update-identity');
 
 let autoUpdater = null;
 let loaded = false;
 let listeners = [];
 let pendingInstaller = null; // absolute path to staged newer installer
 let pendingVersion = null;
-let remoteAsset = null;      // { version, file, url, sha512 } from GitHub Releases
+let remoteAsset = null;      // { version, file, url, sha512, identity } from GitHub Releases
+let pendingUpdateIdentity = null; // { key, identity } for the installer being applied
+let pendingBuildRefresh = false;
 let downloading = false;
 
 function currentVersion() {
   return app.getVersion();
+}
+
+function installedBuildTime() {
+  try { return fs.statSync(app.getPath('exe')).mtimeMs; } catch (_) { return null; }
+}
+
+// Remember published build identities per feed so subsequent replacements of
+// the same-version installer can be surfaced without changing the version tag.
+function updateStatePath() {
+  return path.join(app.getPath('userData'), 'update-state.json');
+}
+function readUpdateState() {
+  try {
+    const value = JSON.parse(fs.readFileSync(updateStatePath(), 'utf8'));
+    return value && typeof value === 'object' && value.assets && typeof value.assets === 'object'
+      ? value : { assets: {} };
+  } catch (_) {
+    return { assets: {} };
+  }
+}
+function writeUpdateState(state) {
+  try {
+    const file = updateStatePath();
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const tmp = file + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(state, null, 2));
+    fs.renameSync(tmp, file);
+  } catch (error) {
+    console.warn('[updater] could not persist build identity:', error.message);
+  }
+}
+function candidateBuild(key, version, identity, times) {
+  const result = updateIdentity.inspect(readUpdateState(), key, version, identity, currentVersion(), times);
+  if (result.newlySeen) writeUpdateState(result.state);
+  return result;
+}
+function acceptUpdateIdentity(identity) {
+  if (!identity || !identity.key || !identity.identity) return;
+  writeUpdateState(updateIdentity.accept(readUpdateState(), identity.key, pendingVersion, identity.identity));
+  pendingBuildRefresh = false;
+  pendingUpdateIdentity = null;
+}
+
+function refreshBuildIdentity(identity, version) {
+  if (!identity || !identity.key || !identity.identity) return;
+  const state = readUpdateState();
+  const previous = state.assets[identity.key];
+  if (!previous || previous.version !== version || previous.identity !== identity.identity) return;
+  state.assets[identity.key] = Object.assign({}, previous, { acceptedIdentity: identity.identity });
+  writeUpdateState(state);
 }
 
 function emit(type, payload) {
@@ -74,9 +127,9 @@ function push(extra) {
 
 // ---------- local dev feed (unsigned, serverless) ----------
 // `npm run dist` writes latest.yml + PrismBrowser-<ver>-x64.exe to the
-// project root. The INSTALLED app scans those directories: if latest.yml
-// advertises a version newer than app.getVersion() and the installer file
-// exists, it is treated as a downloaded update.
+// project root. The installed app scans these directories; newer versions are
+// accepted normally, while same-version builds are identified by the installer
+// hash from latest.yml (or its size and modification time as a fallback).
 function localFeedDirs() {
   const dirs = [];
   if (process.env.PRISM_LOCAL_UPDATE_DIR) dirs.push(process.env.PRISM_LOCAL_UPDATE_DIR);
@@ -105,15 +158,7 @@ function parseLatestYml(text) {
   };
 }
 
-function cmpVersions(a, b) {
-  const pa = String(a).split(/[.+-]/).map((x) => parseInt(x, 10) || 0);
-  const pb = String(b).split(/[.+-]/).map((x) => parseInt(x, 10) || 0);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const d = (pa[i] || 0) - (pb[i] || 0);
-    if (d !== 0) return d;
-  }
-  return 0;
-}
+const cmpVersions = updateIdentity.compareVersions;
 
 function checkLocalFeed() {
   try {
@@ -128,7 +173,6 @@ function checkLocalFeed() {
       let parsed = null;
       try { parsed = parseLatestYml(fs.readFileSync(ymlPath, 'utf8')); } catch (_) { continue; }
       if (!parsed || !parsed.version) continue;
-      if (cmpVersions(parsed.version, cur) <= 0) continue; // not newer
       // Resolve installer file (usually PrismBrowser-<ver>-x64.exe).
       let installer = parsed.file ? path.join(dir, path.basename(parsed.file)) : null;
       if (!installer || !fs.existsSync(installer)) {
@@ -140,12 +184,29 @@ function checkLocalFeed() {
         } catch (_) {}
       }
       if (!installer || !fs.existsSync(installer)) continue;
+      let installerStat;
+      try { installerStat = fs.statSync(installer); } catch (_) { continue; }
+      const identity = {
+        key: 'local:' + path.resolve(dir) + ':' + path.basename(installer),
+        identity: parsed.sha512 || String(installerStat.size) + ':' + String(installerStat.mtimeMs)
+      };
+      const versionOrder = cmpVersions(parsed.version, cur);
+      const sameVersionRefresh = versionOrder === 0;
+      const build = versionOrder >= 0
+        ? candidateBuild(identity.key, parsed.version, identity.identity, sameVersionRefresh ? {
+          candidateTime: installerStat.mtimeMs,
+          installedTime: installedBuildTime()
+        } : undefined)
+        : { available: false, buildRefresh: false };
+      if (!build.available) continue;
       pendingInstaller = installer;
       pendingVersion = parsed.version;
-      push({ checking: false, available: true, downloaded: true, percent: 100, version: parsed.version });
-      broadcast('prism:update-available', { version: parsed.version, local: true });
-      broadcast('prism:update-downloaded', { version: parsed.version, local: true });
-      return { available: true, status: status({ checking: false, available: true, downloaded: true, percent: 100, version: parsed.version }) };
+      pendingUpdateIdentity = identity;
+      pendingBuildRefresh = !!build.buildRefresh;
+      push({ checking: false, available: true, downloaded: true, percent: 100, version: parsed.version, buildRefresh: pendingBuildRefresh });
+      broadcast('prism:update-available', { version: parsed.version, local: true, buildRefresh: pendingBuildRefresh });
+      broadcast('prism:update-downloaded', { version: parsed.version, local: true, buildRefresh: pendingBuildRefresh });
+      return { available: true, status: status({ checking: false, available: true, downloaded: true, percent: 100, version: parsed.version, buildRefresh: pendingBuildRefresh }) };
     }
   } catch (_) {}
   return { available: false };
@@ -184,8 +245,8 @@ function load() {
 
     autoUpdater.on('update-downloaded', (info) => {
       push({ checking: false, available: true, downloaded: true, percent: 100,
-             version: (info && info.version) || null });
-      broadcast('prism:update-downloaded', { version: info && info.version });
+             version: (info && info.version) || null, buildRefresh: pendingBuildRefresh });
+      broadcast('prism:update-downloaded', { version: info && info.version, buildRefresh: pendingBuildRefresh });
     });
 
     autoUpdater.on('error', (err) => {
@@ -255,7 +316,8 @@ async function remoteRelease() {
   const assets = Array.isArray(data.assets) ? data.assets : [];
 
   // electron-builder uploads latest.yml next to the installer, and it carries
-  // the authoritative version and hash. Prefer it over the tag name.
+  // the authoritative version and hash. Prefer it over the tag name; the hash
+  // also distinguishes republished same-version builds.
   let parsed = null;
   const manifest = assets.find((a) => /latest\.ya?ml$/i.test(a.name));
   if (manifest) {
@@ -270,7 +332,13 @@ async function remoteRelease() {
     version: parsed ? parsed.version : String(data.tag_name || '').replace(/^v/, ''),
     file,
     url: asset ? asset.browser_download_url : null,
-    sha512: parsed ? parsed.sha512 : null
+    sha512: parsed ? parsed.sha512 : null,
+    // GitHub's asset digest is content-addressed. Fall back to its publication
+    // time only when neither the manifest nor API provides a content hash.
+    identity: (parsed && parsed.sha512) || (asset && asset.digest) ||
+      (asset && asset.updated_at ? asset.updated_at : null),
+    identityKey: 'github:' + file,
+    publishedAt: asset && asset.updated_at ? asset.updated_at : null
   };
 }
 
@@ -279,7 +347,7 @@ function check({ silent } = {}) {
   const local = checkLocalFeed();
   if (local && local.available) return Promise.resolve(local.status);
   if (pendingInstaller && pendingVersion) {
-    return Promise.resolve(status({ checking: false, available: true, downloaded: true, version: pendingVersion }));
+    return Promise.resolve(status({ checking: false, available: true, downloaded: true, version: pendingVersion, buildRefresh: pendingBuildRefresh }));
   }
   if (!REPO_CONFIGURED) {
     // Report what was actually read. A blank owner here means package.json was
@@ -293,14 +361,25 @@ function check({ silent } = {}) {
   push({ checking: true, error: null });
   return remoteRelease()
     .then((rel) => {
-      if (!rel || !rel.version || cmpVersions(rel.version, currentVersion()) <= 0) {
-        return status({ checking: false, available: false });
-      }
+      const installedVersion = currentVersion();
+      if (!rel || !rel.version) return status({ checking: false, available: false });
+      const versionOrder = cmpVersions(rel.version, installedVersion);
+      const buildRefresh = versionOrder === 0;
+      const identity = { key: rel.identityKey, identity: rel.identity };
+      const build = versionOrder >= 0 && identity.identity
+        ? candidateBuild(identity.key, rel.version, rel.identity, buildRefresh ? {
+          candidateTime: rel.publishedAt,
+          installedTime: installedBuildTime()
+        } : undefined)
+        : { available: versionOrder > 0, buildRefresh: false };
+      if (!build.available) return status({ checking: false, available: false });
       pendingVersion = rel.version;
       remoteAsset = rel;
-      push({ checking: false, available: true, downloaded: false, version: rel.version });
-      broadcast('prism:update-available', { version: rel.version });
-      return status({ checking: false, available: true, version: rel.version });
+      pendingUpdateIdentity = identity;
+      pendingBuildRefresh = !!build.buildRefresh;
+      push({ checking: false, available: true, downloaded: false, version: rel.version, buildRefresh: pendingBuildRefresh });
+      broadcast('prism:update-available', { version: rel.version, buildRefresh: pendingBuildRefresh });
+      return status({ checking: false, available: true, version: rel.version, buildRefresh: pendingBuildRefresh });
     })
     .catch((e) => status({ checking: false, error: e.message }));
 }
@@ -337,8 +416,8 @@ async function downloadRelease() {
     const exe = path.join(dir, path.basename(remoteAsset.file));
     fs.writeFileSync(exe, buf);
     pendingInstaller = exe;
-    push({ checking: false, available: true, downloaded: true, percent: 100, version: pendingVersion });
-    broadcast('prism:update-downloaded', { version: pendingVersion });
+    push({ checking: false, available: true, downloaded: true, percent: 100, version: pendingVersion, buildRefresh: pendingBuildRefresh });
+    broadcast('prism:update-downloaded', { version: pendingVersion, buildRefresh: pendingBuildRefresh });
     return true;
   } catch (e) {
     push({ checking: false, error: e.message });
@@ -351,7 +430,14 @@ async function downloadRelease() {
 function install() {
   // Prefer an installer already staged on disk (local feed, or a download that
   // finished earlier): run it now.
-  if (pendingInstaller && fs.existsSync(pendingInstaller)) return runInstaller(pendingInstaller);
+  if (pendingInstaller && fs.existsSync(pendingInstaller)) {
+    const started = runInstaller(pendingInstaller);
+    if (started) {
+      if (pendingBuildRefresh) acceptUpdateIdentity(pendingUpdateIdentity);
+      else refreshBuildIdentity(pendingUpdateIdentity, pendingVersion);
+    }
+    return started;
+  }
   // Otherwise fetch and verify it first, then run. Always an explicit user
   // choice - a silent self-relaunch loop on a broken build would be worse.
   if (!remoteAsset) {
@@ -359,8 +445,12 @@ function install() {
     return false;
   }
   downloadRelease().then((ok) => {
-    if (!ok) return;
-    if (pendingInstaller && fs.existsSync(pendingInstaller)) runInstaller(pendingInstaller);
+    if (!ok || !pendingInstaller || !fs.existsSync(pendingInstaller)) return;
+    const started = runInstaller(pendingInstaller);
+    if (started) {
+      if (pendingBuildRefresh) acceptUpdateIdentity(pendingUpdateIdentity);
+      else refreshBuildIdentity(pendingUpdateIdentity, pendingVersion);
+    }
   });
   return true;
 }

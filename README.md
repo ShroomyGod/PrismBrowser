@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>A privacy-focused desktop browser built with Electron.</strong><br>
-  Google is the default search engine; choose another built-in provider, use Prism Search, or configure a SearXNG instance.
+  Includes configurable search providers, Prism Search, and optional SearXNG integration.
 </p>
 
 <p align="center">
@@ -66,10 +66,6 @@ The interface is assembled from an Electron main process, a dedicated shell view
 
 Store search currently parses the stores' HTML and depends on their page markup. If a store changes its markup, search can fail even while manual installation by extension ID or URL remains available.
 
-### VPNGate directory
-
-The VPN page lists and ranks public VPNGate relays, caches the directory, and can export an OpenVPN profile. **It does not connect to a VPN or route browser traffic through a tunnel.** Use an OpenVPN client to connect to an exported profile; volunteer relay operators may observe traffic leaving their relay.
-
 ### Updates
 
 The updater checks GitHub Releases for a newer version, downloads the Windows installer, verifies the published SHA-512 checksum, and offers an explicit install action. Release publishing is handled by the release build script when a GitHub token is supplied.
@@ -89,7 +85,7 @@ Electron main process
 ├── Settings and encrypted data  settings.js, securestore.js, stores.js
 ├── Search and indexing          prism-search*.js, index-store.js, crawler.js
 ├── Extensions                   extensions.js
-├── Update and VPN directory     updater.js, vpngate.js
+├── Update service                updater.js
 └── Local prism:// protocol       protocols.js
 ```
 
@@ -135,10 +131,10 @@ The package manifest and lockfile are currently out of sync regarding dependency
 | Command | Purpose |
 | --- | --- |
 | `npm start` | Launch Electron using `src/main/main.js`. |
-| `npm test` | Run the configured search-web test (`test/search-web.test.js`). This is not a complete application test suite. |
+| `npm test` | Run search-web, generated-theme, and Electron theme/settings UI tests. |
 | `npm run icons` | Regenerate icons and wordmarks from the source artwork in `assets/`. |
 | `npm run build` | Build the configured Windows application directory with Electron Builder. |
-| `npm run release` | Regenerate/validate icons, clean prior build outputs, build the Windows installer and portable executable, verify artifacts, and publish if a GitHub token is available. |
+| `npm run release` | Regenerate/validate icons, clean prior build outputs, build the Windows installer and portable executable, verify artifacts, and publish (replacing any same-version GitHub release) if a GitHub token is available. |
 
 ## Build and release
 
@@ -155,7 +151,20 @@ Expected outputs in the repository root include:
 - `Prism-<version>-x64.exe.blockmap` — installer update metadata
 - `latest.yml` — Electron Builder update manifest (when generated)
 
-The release script regenerates the icons, checks their transparent borders, removes previous matching Prism/Shroom installer artifacts and known build directories, runs Electron Builder, and checks that expected outputs exist. Review `scripts/release.js` before using it: the script removes prior generated build outputs and, when publishing is enabled, may create and push the version tag.
+The release script regenerates the icons, checks their transparent borders, removes previous matching Prism/Shroom installer artifacts and known build directories, runs Electron Builder, and checks that expected outputs exist. Review `scripts/release.js` before using it: the script removes prior generated build outputs and, when publishing is enabled, may create and push the version tag, delete the existing GitHub release for that version, and upload the new artifacts.
+
+Release descriptions come from [`scripts/release-notes.md`](scripts/release-notes.md). That template is copied to `release-notes.md` (gitignored) at publish time with the version substituted, and Electron Builder publishes it as the GitHub release body. Edit the template to change what future releases say about Prism; the generated copy is not committed.
+
+### Republishing the same version
+
+`npm run release` can be run again without bumping `version`. When a GitHub token is set, the script:
+
+1. Builds and verifies the Windows artifacts first, so a broken build never reaches GitHub.
+2. Pushes the version tag (`v<version>`) if it is not on the remote yet, and stops if that fails.
+3. Deletes every published GitHub release whose tag matches the version being built.
+4. Uploads the new installer, portable build, blockmap, and `latest.yml` to a new release under the same tag.
+
+This makes a same-version republish (for example a build that fixes a bug without a version bump) reach existing installs: Prism's updater compares the published installer's SHA-512, so a replaced release is offered even though the version number is unchanged. Deletion happens only after a successful local build and a confirmed remote tag, and a draft release with the same tag stops the run rather than being deleted automatically.
 
 For GitHub publishing, configure a least-privilege token for **this repository only** with the contents permission needed to create releases, then set it only in the build shell. For PowerShell:
 
@@ -164,11 +173,11 @@ $env:GITHUB_TOKEN = "<your-token>"
 npm run release
 ```
 
-Never commit the token, put it in `package.json`, or ship it inside Prism. Git tag pushing also requires Git itself to be authenticated for the configured remote. Commit the exact release source first, verify the current branch and remote, and inspect the version/tag before publishing. Each release requires a new version in `package.json`.
+Never commit the token, put it in `package.json`, or ship it inside Prism. Git tag pushing also requires Git itself to be authenticated for the configured remote. Commit the exact release source first, verify the current branch and remote, and inspect the version/tag before publishing. A new version in `package.json` is normally required, but republishing the same version replaces the existing release for that tag as described above.
 
 ## Tests
 
-The configured `npm test` command runs `test/search-web.test.js`. There are additional test and probe scripts under `test/`, but no comprehensive suite is currently wired into the package scripts. The release script verifies icon transparency and expected artifacts; its packaged-ASAR content inspection can emit a warning rather than fail the build.
+`npm test` runs search-web unit tests, generated-theme tests, updater identity tests, release-script tests, and a real Electron theme/settings UI test. The `test/` directory also contains Electron regression tests for browser layout, overlays, bookmarks, compatible site themes, persistence, and migration. These focused tests are not a comprehensive suite.
 
 For meaningful changes, also test the user-facing behavior in the packaged build—for example, search navigation with ad blocking enabled, private-window cleanup, download scanning, extensions, and update installation. A passing build alone does not validate these flows.
 
@@ -176,12 +185,12 @@ For meaningful changes, also test the user-facing behavior in the packaged build
 
 | Path | Contents |
 | --- | --- |
-| `src/main/` | Electron main-process modules: tabs, sessions, settings, security, updater, search, extensions, and VPNGate. |
+| `src/main/` | Electron main-process modules: tabs, sessions, settings, security, updater, search, and extensions. |
 | `src/shell/` | Custom browser chrome and its stylesheet. |
-| `src/pages/` | Internal pages for new tabs, search, settings, history, bookmarks, downloads, passwords, extensions, privacy, VPNGate, and errors. |
+| `src/pages/` | Internal pages for new tabs, search, settings, history, bookmarks, downloads, passwords, extensions, privacy, and errors. |
 | `src/preload/` | Context-isolated IPC bridges for the shell and internal pages. |
 | `assets/` | Source logo artwork and generated application icons. |
-| `scripts/` | Logo processing and the Windows release build. |
+| `scripts/` | Logo processing, the Windows release build, and the release-notes template. |
 | `test/` | Search-web tests and additional focused probes. |
 | `src-tauri/` | Legacy Tauri/Servo-era project files; not part of the current Electron entry path. |
 
@@ -190,6 +199,5 @@ For meaningful changes, also test the user-facing behavior in the packaged build
 - The shipped build configuration targets Windows x64; other operating systems are not configured as release targets.
 - Extension compatibility depends on Electron/Chromium's supported extension APIs. Browser-toolbar popup UI is not implemented as a native extension popup; the toolbar menu provides extension management access instead.
 - Store search relies on upstream HTML markup and may need maintenance when store pages change.
-- VPNGate support is directory/profile export only, not a built-in VPN tunnel.
 - Community reputation feeds and hash lookups are incomplete by nature and are not a substitute for an endpoint antivirus product.
 - Automated tests cover only a small part of the application; packaged-app behavior still needs manual verification.

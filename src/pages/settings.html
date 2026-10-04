@@ -33,6 +33,35 @@
     </div>
     <div id="line-bookmarksbar"></div>
     <div class="setting-line">
+      <div class="info"><b>Color recipe</b><div class="muted">Generate a palette from over 69,000 hue, gradient, and motion combinations.</div></div>
+      <div class="row" style="flex-wrap:wrap;justify-content:flex-end">
+        <select id="gradient">
+          <option value="aurora">Aurora gradient</option><option value="sunset">Sunset gradient</option>
+          <option value="ocean">Ocean gradient</option><option value="candy">Candy gradient</option>
+          <option value="ember">Ember gradient</option><option value="forest">Forest gradient</option>
+          <option value="mono">Monochrome gradient</option><option value="none">Solid color</option>
+        </select>
+        <select id="motion">
+          <option value="none">Still</option><option value="shimmer">Shimmer</option>
+          <option value="drift">Drift</option><option value="breathe">Breathe</option>
+          <option value="pulse">Pulse</option><option value="wave">Wave</option>
+        </select>
+        <button id="random-theme" type="button">Surprise me</button>
+      </div>
+    </div>
+    <div class="setting-line">
+      <div class="info"><label for="hue"><b>Hue</b></label><div class="muted">Choose the core color for the browser UI.</div></div>
+      <input id="hue" type="range" min="0" max="359" value="215" aria-label="Theme hue" style="max-width:260px">
+      <span id="theme-count" class="badge" style="position:static">69,120 palettes</span>
+    </div>
+    <div class="card theme-gallery-card">
+      <div class="row between" style="flex-wrap:wrap">
+        <div><b>Generated themes</b><div class="muted" id="gallery-status">Browse a page at a time. Select a swatch to apply it.</div></div>
+        <div class="row"><button id="theme-prev" type="button" aria-label="Previous theme page">Previous</button><span id="theme-page" class="muted" aria-live="polite"></span><button id="theme-next" type="button" aria-label="Next theme page">Next</button></div>
+      </div>
+      <div id="theme-grid" class="theme-grid" role="group" aria-label="Generated color themes"></div>
+    </div>
+    <div id="line-site-theme" class="setting-line">
       <div class="info"><b>Site theme</b><div class="muted">Never recolors page content. Auto only follows the browser on sites that opt in with a color-scheme declaration.</div></div>
       <select id="siteTheme">
         <option value="auto">Auto</option>
@@ -40,6 +69,25 @@
         <option value="light">Light</option>
         <option value="off">Off</option>
       </select>
+    </div>
+  </div>
+
+  <h3 id="accessibility">Accessibility</h3>
+  <div class="card">
+    <div class="setting-line">
+      <div class="info"><label for="text-scale"><b>Browser UI text size</b></label><div class="muted">Scale Prism's shell and internal pages. Website page zoom remains separate.</div></div>
+      <input id="text-scale" type="range" min="80" max="150" step="5" style="max-width:220px">
+      <output id="text-scale-value" for="text-scale">100%</output>
+    </div>
+    <div class="setting-line">
+      <div class="info"><b>Contrast</b><div class="muted">Use stronger borders, focus rings, and text contrast.</div></div>
+      <select id="contrast"><option value="normal">Standard</option><option value="high">High contrast</option></select>
+    </div>
+    <div id="line-larger-targets"></div>
+    <div id="line-focus-indicators"></div>
+    <div class="setting-line">
+      <div class="info"><b>Motion</b><div class="muted">Animation is decorative. Respect reduced-motion preferences or turn it off.</div></div>
+      <select id="reduced-motion"><option value="system">Follow system</option><option value="reduce">Reduce motion</option><option value="no-preference">Allow motion</option></select>
     </div>
   </div>
 
@@ -101,6 +149,7 @@
   <h3>About</h3>
   <div class="card" id="about"><div class="muted">Loading...</div></div>
 </div>
+<script src="prism://settings/shared/theme-engine.js"></script>
 <script src="/common.js"></script>
 <script>
 (async function () {
@@ -109,16 +158,168 @@
   const $ = (id) => document.getElementById(id);
 
   async function save(patch) {
-    s = (await window.prism.setSettings(patch)) || s;
+    const latest = await window.prism.setSettings(patch);
+    if (latest) s = latest;
   }
 
-  // ---- appearance ----
+  // ---- appearance + generated gallery ----
+  const visual = Object.assign({ hue: 215, saturation: 75, gradient: 'aurora', motion: 'shimmer', intensity: 45 }, s.appearance.visualTheme || {});
+  const accessibility = Object.assign({ textScale: 100, contrast: 'normal', largerTargets: false, reducedMotion: 'system', focusIndicators: true }, s.appearance.accessibility || {});
+  let themePage = 0;
+  const THEMES_PER_PAGE = 24;
+  const totalPages = Math.ceil(PrismTheme.THEME_COUNT / THEMES_PER_PAGE);
+  const descriptiveGradient = (g) => ({ aurora: 'Aurora', sunset: 'Sunset', ocean: 'Ocean', candy: 'Candy', ember: 'Ember', forest: 'Forest', mono: 'Mono', none: 'Solid' }[g] || g);
+  function applyPageAppearance() {
+    let resolvedTheme = s.appearance.theme || 'dark';
+    if (resolvedTheme === 'system') resolvedTheme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    PrismTheme.apply(document.documentElement, Object.assign({}, s.appearance, { theme: resolvedTheme, visualTheme: visual, accessibility }));
+  }
+  const systemTheme = matchMedia('(prefers-color-scheme: dark)');
+  systemTheme.addEventListener && systemTheme.addEventListener('change', () => {
+    if (s.appearance.theme === 'system') applyPageAppearance();
+  });
+  let appearanceSaveTimer = null;
+  let appearanceSaveQueue = Promise.resolve();
+  let appearanceRevision = 0;
+  function persistAppearance() {
+    const revision = ++appearanceRevision;
+    const snapshot = Object.assign({}, s.appearance);
+    appearanceSaveQueue = appearanceSaveQueue.catch(() => {}).then(async () => {
+      const latest = await window.prism.setSettings({ appearance: snapshot });
+      if (revision === appearanceRevision && latest) {
+        s = latest;
+        appearanceDirty = false;
+      }
+    });
+    appearanceSaveQueue.catch((error) => console.error('Could not save appearance', error));
+  }
+  let appearanceDirty = false;
+  function updateAppearance(patch, debounce = false) {
+    appearanceDirty = true;
+    s.appearance = Object.assign({}, s.appearance, patch);
+    if (patch.visualTheme) Object.assign(visual, patch.visualTheme);
+    if (patch.accessibility) Object.assign(accessibility, patch.accessibility);
+    applyPageAppearance();
+    clearTimeout(appearanceSaveTimer);
+    if (debounce) appearanceSaveTimer = setTimeout(persistAppearance, 160);
+    else persistAppearance();
+  }
+  function flushAppearance() {
+    clearTimeout(appearanceSaveTimer);
+    appearanceSaveTimer = null;
+    persistAppearance();
+  }
+  function renderThemes() {
+    const grid = $('theme-grid');
+    grid.textContent = '';
+    const start = themePage * THEMES_PER_PAGE;
+    for (let slot = 0; slot < THEMES_PER_PAGE && start + slot < PrismTheme.THEME_COUNT; slot++) {
+      // A coprime stride samples the full generated space on every page, rather
+      // than showing 24 near-identical hues together. Every recipe remains
+      // reachable once as the user pages through the catalog.
+      const i = ((start + slot) * 2881) % PrismTheme.THEME_COUNT;
+      const recipe = PrismTheme.fromIndex(i);
+      const palette = PrismTheme.resolve(recipe, $('theme').value === 'light' ? 'light' : 'dark');
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'theme-swatch';
+      button.setAttribute('aria-pressed', String(recipe.hue === visual.hue && recipe.saturation === visual.saturation && recipe.gradient === visual.gradient && recipe.motion === visual.motion));
+      button.setAttribute('aria-label', `Theme ${i + 1}: ${descriptiveGradient(recipe.gradient)}, hue ${recipe.hue}, ${recipe.motion} motion`);
+      button.title = `Apply theme ${i + 1}`;
+      const colorChannel = (value, fallback) => {
+        if (!value || value === 'transparent') return fallback;
+        return String(value).replace(/\s*\/\s*[\d.]+\)$/, ')');
+      };
+      button.style.setProperty('--swatch-a', colorChannel(palette['--gradient-a'], palette['--accent']));
+      button.style.setProperty('--swatch-b', colorChannel(palette['--gradient-b'], palette['--accent']));
+      button.style.setProperty('--swatch-c', colorChannel(palette['--gradient-c'], palette['--accent']));
+      button.style.setProperty('--swatch-ink', palette['--gradient-text']);
+      const name = document.createElement('span');
+      name.className = 'swatch-name';
+      name.textContent = `${descriptiveGradient(recipe.gradient)} · ${recipe.hue}`;
+      const check = document.createElement('span');
+      check.className = 'swatch-check';
+      check.setAttribute('aria-hidden', 'true');
+      check.textContent = button.getAttribute('aria-pressed') === 'true' ? '✓' : '';
+      button.append(name, check);
+      button.addEventListener('click', () => {
+        Object.assign(visual, recipe);
+        visual.intensity = recipe.intensity || visual.intensity;
+        $('hue').value = visual.hue;
+        $('gradient').value = visual.gradient;
+        $('motion').value = visual.motion;
+        updateAppearance({ visualTheme: Object.assign({}, visual) });
+        renderThemes();
+      });
+      grid.appendChild(button);
+    }
+    $('theme-page').textContent = `${themePage + 1} / ${totalPages}`;
+    $('theme-prev').disabled = themePage === 0;
+    $('theme-next').disabled = themePage >= totalPages - 1;
+  }
   $('theme').value = s.appearance.theme;
-  $('theme').addEventListener('change', () => save({ appearance: { theme: $('theme').value } }));
+  $('theme').addEventListener('change', () => { updateAppearance({ theme: $('theme').value }); renderThemes(); });
   $('siteTheme').value = s.appearance.siteTheme || 'auto';
-  $('siteTheme').addEventListener('change', () => save({ appearance: { siteTheme: $('siteTheme').value } }));
-  const bb = PrismUI.switchRow('Bookmarks bar', 'Show the bookmarks strip under the toolbar.', s.appearance.bookmarksBar, (v) => save({ appearance: { bookmarksBar: v } }));
+  $('siteTheme').addEventListener('change', () => updateAppearance({ siteTheme: $('siteTheme').value }));
+  $('gradient').value = visual.gradient;
+  $('motion').value = visual.motion;
+  $('hue').value = visual.hue;
+  $('gradient').addEventListener('change', () => { visual.gradient = $('gradient').value; updateAppearance({ visualTheme: Object.assign({}, visual) }); renderThemes(); });
+  $('motion').addEventListener('change', () => { visual.motion = $('motion').value; updateAppearance({ visualTheme: Object.assign({}, visual) }); renderThemes(); });
+  $('hue').addEventListener('input', () => { visual.hue = Number($('hue').value); updateAppearance({ visualTheme: Object.assign({}, visual) }, true); renderThemes(); });
+  $('hue').addEventListener('change', flushAppearance);
+  $('random-theme').addEventListener('click', () => {
+    Object.assign(visual, PrismTheme.random(visual));
+    $('hue').value = visual.hue; $('gradient').value = visual.gradient; $('motion').value = visual.motion;
+    updateAppearance({ visualTheme: Object.assign({}, visual) }); renderThemes();
+  });
+  $('theme-prev').addEventListener('click', () => { themePage = Math.max(0, themePage - 1); renderThemes(); });
+  $('theme-next').addEventListener('click', () => { themePage = Math.min(totalPages - 1, themePage + 1); renderThemes(); });
+  const bb = PrismUI.switchRow('Bookmarks bar', 'Show the bookmarks strip under the toolbar.', s.appearance.bookmarksBar, (v) => updateAppearance({ bookmarksBar: v }));
   $('line-bookmarksbar').append(bb.line);
+  applyPageAppearance();
+  renderThemes();
+
+  // ---- accessibility ----
+  $('text-scale').value = accessibility.textScale;
+  $('text-scale-value').value = accessibility.textScale + '%';
+  $('text-scale').addEventListener('input', () => {
+    accessibility.textScale = Number($('text-scale').value);
+    $('text-scale-value').value = accessibility.textScale + '%';
+    updateAppearance({ accessibility: Object.assign({}, accessibility) }, true);
+  });
+  $('text-scale').addEventListener('change', flushAppearance);
+  $('contrast').value = accessibility.contrast;
+  $('contrast').addEventListener('change', () => { accessibility.contrast = $('contrast').value; updateAppearance({ accessibility: Object.assign({}, accessibility) }); });
+  $('reduced-motion').value = accessibility.reducedMotion;
+  $('reduced-motion').addEventListener('change', () => { accessibility.reducedMotion = $('reduced-motion').value; updateAppearance({ accessibility: Object.assign({}, accessibility) }); });
+  const targets = PrismUI.switchRow('Larger controls', 'Increase the minimum size of interactive targets.', accessibility.largerTargets, (v) => { accessibility.largerTargets = v; updateAppearance({ accessibility: Object.assign({}, accessibility) }); });
+  $('line-larger-targets').append(targets.line);
+  const focus = PrismUI.switchRow('Strong keyboard focus', 'Use a high-visibility outline when navigating with a keyboard.', accessibility.focusIndicators, (v) => { accessibility.focusIndicators = v; updateAppearance({ accessibility: Object.assign({}, accessibility) }); });
+  $('line-focus-indicators').append(focus.line);
+
+  // Keep this page in sync when quick controls or another internal page changes
+  // appearance. Ignore broadcasts while local edits are being persisted.
+  if (window.prism.onSettingsChanged) window.prism.onSettingsChanged((next) => {
+    if (appearanceDirty || !next || !next.appearance) return;
+    s = next;
+    Object.assign(visual, { hue: 215, saturation: 75, gradient: 'aurora', motion: 'shimmer', intensity: 45 }, next.appearance.visualTheme || {});
+    Object.assign(accessibility, { textScale: 100, contrast: 'normal', largerTargets: false, reducedMotion: 'system', focusIndicators: true }, next.appearance.accessibility || {});
+    $('theme').value = s.appearance.theme || 'dark';
+    $('siteTheme').value = s.appearance.siteTheme || 'auto';
+    $('hue').value = visual.hue;
+    $('gradient').value = visual.gradient;
+    $('motion').value = visual.motion;
+    $('text-scale').value = accessibility.textScale;
+    $('text-scale-value').value = accessibility.textScale + '%';
+    $('contrast').value = accessibility.contrast;
+    $('reduced-motion').value = accessibility.reducedMotion;
+    bb.input.checked = !!s.appearance.bookmarksBar;
+    targets.input.checked = !!accessibility.largerTargets;
+    focus.input.checked = !!accessibility.focusIndicators;
+    applyPageAppearance();
+    renderThemes();
+  });
 
   // ---- privacy ----
   const ab = PrismUI.switchRow('Ad blocking', 'Filter ads and trackers on every page.', s.privacy.adblock.enabled, (v) => save({ privacy: { adblock: { enabled: v } } }));
@@ -186,6 +387,7 @@
   })();
 
   if (location.hash === '#about') $('about').scrollIntoView();
+  else if (location.hash === '#accessibility') $('accessibility').scrollIntoView();
 })();
 </script>
 </body>

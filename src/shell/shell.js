@@ -11,6 +11,7 @@ let state = {
   active: null,        // tab snapshot object
   adblockEnabled: true,
   theme: 'dark',
+  appearance: null,
   bookmarksBar: false,
   private: false,      // this whole window is an incognito window
   settings: null
@@ -256,7 +257,7 @@ function hideDropdown() {
 // toasts) — otherwise the page hides them. Poll once per frame and report the
 // bottom edge; main applies it as the shell view's height. Overlays are all
 // top-anchored so a single rectangle from y=0 always covers them.
-const OVERLAY_IDS = ['omni-dropdown', 'menu-panel', 'shield-pop', 'ext-pop', 'findbar', 'load-progress', 'toasts', 'status-bubble'];
+const OVERLAY_IDS = ['omni-dropdown', 'menu-panel', 'shield-pop', 'ext-pop', 'theme-pop', 'findbar', 'load-progress', 'toasts', 'status-bubble'];
 let lastExtent = -1;
 function computeNeed() {
   try {
@@ -356,6 +357,7 @@ document.addEventListener('click', (ev) => {
   if (!$('omni-dropdown').contains(ev.target) && ev.target !== omni && $('omni-dropdown').style.display !== 'none') { hideDropdown(); changed = true; }
   if (!$('menu-panel').contains(ev.target) && ev.target.closest && !ev.target.closest('#menu-btn') && $('menu-panel').style.display !== 'none') { $('menu-panel').style.display = 'none'; changed = true; }
   if (!$('ext-pop').contains(ev.target) && ev.target.closest && !ev.target.closest('#ext-btn') && $('ext-pop').style.display !== 'none') { $('ext-pop').style.display = 'none'; changed = true; }
+  if (!$('theme-pop').contains(ev.target) && ev.target.closest && !ev.target.closest('#theme-btn') && $('theme-pop').style.display !== 'none') { $('theme-pop').style.display = 'none'; changed = true; }
   if (!$('shield-pop').contains(ev.target) && ev.target.closest && !ev.target.closest('#shield') && $('shield-pop').style.display !== 'none') { $('shield-pop').style.display = 'none'; changed = true; }
   if (changed) syncExtentNow();
 });
@@ -512,22 +514,25 @@ $('menu-panel').addEventListener('click', async (ev) => {
   if (act === 'new-tab') S.newTab(WID);
   else if (act === 'private') S.newPrivateWindow();
   else if (act === 'search-home') S.newTab(WID, 'prism://search');
-  else if (act === 'vpn') S.newTab(WID, 'prism://vpn');
   else if (act === 'update-lists') { toast('Updating protection lists...', 'Updating ad-block and malware feeds in the background.'); }
   else if (act === 'check-update') {
-    const pending = toast('Checking for updates...', 'Contacting the update server.');
+    const pending = toast('Checking for updates...', 'Checking for a newer version or bug-fix build.');
     try {
       const st = await S.checkForUpdates();
       if (st && st.error) toast('Update check failed', st.error, true);
       else if (st && st.downloaded) {
-        pendingUpdate = { version: st.version, downloaded: true };
+        pendingUpdate = { version: st.version, downloaded: true, buildRefresh: !!st.buildRefresh };
         showUpdateButton(pendingUpdate);
-        toast('Update ready', 'Version ' + st.version + ' is ready to install.', false, 'Update now', () => S.installUpdate());
+        const readyMessage = st.buildRefresh
+          ? 'The latest same-version bug-fix build is ready to install.'
+          : 'Version ' + st.version + ' is ready to install.';
+        toast('Update ready', readyMessage, false, 'Update now', () => S.installUpdate());
       }
       else if (st && st.available) {
-        pendingUpdate = { version: st.version, downloaded: false };
+        pendingUpdate = { version: st.version, downloaded: false, buildRefresh: !!st.buildRefresh };
         showUpdateButton(pendingUpdate);
-        toast('Update downloading', 'Version ' + st.version + ' - ' + (st.percent || 0) + '%');
+        const updateLabel = st.buildRefresh ? 'the latest same-version bug-fix build' : 'version ' + st.version;
+        toast('Update downloading', 'Downloading ' + updateLabel + ' - ' + (st.percent || 0) + '%');
       }
       else toast('You are up to date', 'Prism ' + (st && st.version) + ' is the latest version.');
     } catch (e) {
@@ -645,11 +650,77 @@ function toast(title, body, danger, actionLabel, action) {
 // ---------- theme ----------
 function applyTheme() {
   let theme = state.theme || 'dark';
-  if (theme === 'system') {
-    theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-  }
-  document.documentElement.dataset.theme = theme;
+  if (theme === 'system') theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  if (window.PrismTheme) {
+    const appearance = Object.assign({}, state.appearance || {}, { theme, visualTheme: state.appearance && state.appearance.visualTheme });
+    window.PrismTheme.apply(document.documentElement, appearance);
+  } else document.documentElement.dataset.theme = theme;
+  document.documentElement.dataset.motionPreference =
+    (state.appearance && state.appearance.accessibility && state.appearance.accessibility.reducedMotion) || 'system';
 }
+
+// ---------- quick theme controls ----------
+function syncThemeControls() {
+  const appearance = state.appearance || {};
+  const visual = appearance.visualTheme || { hue: 215, gradient: 'aurora', motion: 'none' };
+  if ($('shell-hue')) $('shell-hue').value = Number.isFinite(Number(visual.hue)) ? visual.hue : 215;
+  if ($('shell-gradient')) $('shell-gradient').value = visual.gradient || 'aurora';
+  if ($('shell-motion')) $('shell-motion').value = visual.motion || 'none';
+}
+function applyThemePatch(patch) {
+  const appearance = Object.assign({}, state.appearance || {});
+  if (patch.visualTheme) appearance.visualTheme = Object.assign({}, appearance.visualTheme || {}, patch.visualTheme);
+  Object.assign(appearance, patch);
+  state.appearance = appearance;
+  state.theme = appearance.theme || state.theme;
+  applyTheme();
+  // Update immediately but coalesce the encrypted persistence write while a
+  // slider is being dragged. Revisions prevent an older in-flight IPC response
+  // or its settings broadcast from replacing a more recent control value.
+  const revision = ++themeSaveRevision;
+  themeSavePending = true;
+  clearTimeout(themeSaveTimer);
+  themeSaveTimer = setTimeout(async () => {
+    const savedAppearance = state.appearance;
+    themeSaveTimer = null;
+    try {
+      const latest = await S.setSettings({ appearance: savedAppearance });
+      if (revision === themeSaveRevision && latest && latest.appearance) {
+        themeSavePending = false;
+        state.appearance = latest.appearance;
+        state.theme = latest.appearance.theme || state.theme;
+        applyTheme();
+        syncThemeControls();
+      }
+    } catch (error) {
+      if (revision === themeSaveRevision) themeSavePending = false;
+      toast('Could not save appearance', (error && error.message) || String(error), true);
+    }
+  }, 120);
+  syncThemeControls();
+}
+let themeSaveTimer = null;
+let themeSaveRevision = 0;
+let themeSavePending = false;
+const themePop = $('theme-pop');
+$('theme-btn').addEventListener('click', () => {
+  const show = themePop.style.display === 'none';
+  $('menu-panel').style.display = 'none'; $('ext-pop').style.display = 'none'; $('shield-pop').style.display = 'none';
+  if ($('omni-dropdown').style.display !== 'none') hideDropdown();
+  themePop.style.display = show ? '' : 'none';
+  if (show) syncThemeControls();
+  syncExtentNow();
+});
+themePop.querySelectorAll('[data-base-theme]').forEach((button) => button.addEventListener('click', () => applyThemePatch({ theme: button.dataset.baseTheme })));
+$('shell-hue').addEventListener('input', () => applyThemePatch({ visualTheme: { hue: Number($('shell-hue').value) } }));
+$('shell-gradient').addEventListener('change', () => applyThemePatch({ visualTheme: { gradient: $('shell-gradient').value } }));
+$('shell-motion').addEventListener('change', () => applyThemePatch({ visualTheme: { motion: $('shell-motion').value } }));
+$('theme-random').addEventListener('click', () => {
+  const visual = (state.appearance && state.appearance.visualTheme) || {};
+  applyThemePatch({ visualTheme: window.PrismTheme.random(visual) });
+});
+$('theme-accessibility').addEventListener('click', () => { themePop.style.display = 'none'; S.newTab(WID, 'prism://settings#accessibility'); syncExtentNow(); });
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (state.theme === 'system') applyTheme(); });
 
 // ---------- private / incognito chrome ----------
 // Driven by the `private` flag the main process puts on every snapshot. It is a
@@ -735,6 +806,8 @@ S.onPageFocused(() => {
   if ($('omni-dropdown').style.display !== 'none') { hideDropdown(); changed = true; }
   if ($('menu-panel').style.display !== 'none') { $('menu-panel').style.display = 'none'; changed = true; }
   if ($('shield-pop').style.display !== 'none') { $('shield-pop').style.display = 'none'; changed = true; }
+  if ($('ext-pop').style.display !== 'none') { $('ext-pop').style.display = 'none'; changed = true; }
+  if ($('theme-pop').style.display !== 'none') { $('theme-pop').style.display = 'none'; changed = true; }
   if (changed) syncExtentNow();
 });
 
@@ -754,27 +827,29 @@ S.onPopupBlocked(({ url }) => {
 });
 
 S.onUpdateDownloaded((d) => {
-  pendingUpdate = { version: d && d.version, downloaded: true };
+  pendingUpdate = { version: d && d.version, downloaded: true, buildRefresh: !!(d && d.buildRefresh) };
   showUpdateButton(pendingUpdate);
+  const buildLabel = pendingUpdate.buildRefresh ? 'a same-version bug-fix build' : 'Prism ' + (d && d.version ? d.version : '');
   toast('Update ready to install',
-    'Prism ' + (d && d.version ? d.version : '') + ' has been downloaded.',
+    buildLabel + ' has been downloaded.',
     false, 'Update now', () => S.installUpdate());
 });
 S.onUpdateAvailable((d) => {
-  pendingUpdate = { version: d && d.version, downloaded: !!(d && d.downloaded) };
+  pendingUpdate = { version: d && d.version, downloaded: !!(d && d.downloaded), buildRefresh: !!(d && d.buildRefresh) };
   showUpdateButton(pendingUpdate);
+  const updateLabel = pendingUpdate.buildRefresh ? 'a same-version bug-fix build' : 'Prism ' + (d && d.version);
   if (pendingUpdate.downloaded) {
     toast('Update ready to install',
-      'Prism ' + (d && d.version ? d.version : '') + ' is ready.',
+      updateLabel + ' is ready.',
       false, 'Update now', () => S.installUpdate());
   } else {
-    toast('Update available', 'Downloading Prism ' + (d && d.version) + '...');
+    toast('Update available', 'Downloading ' + updateLabel + '...');
   }
 });
 
 // ---------- in-app update button ----------
 // Persistent toolbar affordance: appears automatically when the main process
-// finds a newer build (startup check + hourly + "Check for updates").
+// finds a newer version or a changed same-version build (startup check + hourly + "Check for updates").
 // Clicking it re-checks, then installs: the installer runs silent (/S) and
 // the app quits so files can be replaced — a one-click self-update.
 let pendingUpdate = null;
@@ -782,25 +857,27 @@ function showUpdateButton(info) {
   const btn = $('update-btn');
   if (!btn) return;
   btn.style.display = '';
-  btn.title = info && info.version
-    ? 'Update to ' + info.version + ' (click to update now)'
-    : 'Update available (click to update now)';
+  btn.title = info && info.buildRefresh
+    ? 'Install the latest bug-fix build (same version)'
+    : info && info.version
+      ? 'Update to ' + info.version + ' (click to update now)'
+      : 'Update available (click to update now)';
   syncExtentNow();
 }
 $('update-btn').addEventListener('click', async () => {
   if (pendingUpdate && pendingUpdate.downloaded) { S.installUpdate(); return; }
-  const pending = toast('Checking for updates...', 'Looking for a newer Prism.');
+  const pending = toast('Checking for updates...', 'Checking for a newer version or bug-fix build.');
   try {
     const st = await S.checkForUpdates();
     if (st && st.downloaded) {
-      pendingUpdate = { version: st.version, downloaded: true };
+      pendingUpdate = { version: st.version, downloaded: true, buildRefresh: !!st.buildRefresh };
       showUpdateButton(pendingUpdate);
-      toast('Update ready to install', 'Prism ' + (st.version || '') + ' is ready.',
+      toast('Update ready to install', st.buildRefresh ? 'The latest bug-fix build is ready.' : 'Prism ' + (st.version || '') + ' is ready.',
         false, 'Update now', () => S.installUpdate());
     } else if (st && st.available) {
-      pendingUpdate = { version: st.version, downloaded: false };
+      pendingUpdate = { version: st.version, downloaded: false, buildRefresh: !!st.buildRefresh };
       showUpdateButton(pendingUpdate);
-      toast('Update available', 'Downloading version ' + (st.version || '') + '...');
+      toast('Update available', st.buildRefresh ? 'Downloading the latest bug-fix build...' : 'Downloading version ' + (st.version || '') + '...');
     } else if (st && st.error) {
       toast('Update check failed', st.error, true);
     } else {
@@ -817,7 +894,12 @@ S.onSettingsChanged((s) => {
   const prevBar = state.bookmarksBar;
   state.settings = s;
   state.adblockEnabled = s.privacy.adblock.enabled;
-  state.theme = s.appearance.theme;
+  // Do not let a delayed snapshot overwrite a value still being coalesced.
+  if (!themeSavePending) {
+    state.theme = s.appearance.theme;
+    state.appearance = s.appearance;
+  }
+  syncThemeControls();
   // The bar's visibility is chrome height, so keep it in sync and re-render:
   // renderBookmarksBar re-reports the measured height to the main process.
   state.bookmarksBar = !!(s.appearance && s.appearance.bookmarksBar);
@@ -845,6 +927,8 @@ window.addEventListener('dblclick', (ev) => {
   state.settings = await S.getSettings();
   state.adblockEnabled = state.settings.privacy.adblock.enabled;
   state.theme = state.settings.appearance.theme;
+  state.appearance = state.settings.appearance;
   applyTheme();
+  syncThemeControls();
   S.init(WID);
 })();

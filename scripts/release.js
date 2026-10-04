@@ -19,6 +19,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { PNG } = require('pngjs');
+const { createReleaseNotes, githubApiRequest, replaceExistingRelease } = require('./release-helper');
 
 const ROOT = path.join(__dirname, '..');
 const ASSETS = path.join(ROOT, 'assets');
@@ -51,6 +52,65 @@ const STALE_ARTIFACTS = ['latest.yml'];
 
 function log(msg) { console.log(msg); }
 function fail(msg) { console.error('\nERROR: ' + msg + '\n'); process.exit(1); }
+
+// electron-builder publishes with tagPrefix (default "v" for GitHub), so the
+// release the client fetches is this tag, not a guessed spelling.
+function tagName() {
+  const prefix = (pkg.build && pkg.build.publish && pkg.build.publish.tagPrefix) || 'v';
+  return prefix + VERSION;
+}
+
+function resolveGitHubConfig() {
+  const publish = pkg.build && pkg.build.publish;
+  if (!publish || publish.provider !== 'github' || !publish.owner || !publish.repo) {
+    fail('GitHub release publishing requires build.publish.provider, owner, and repo in package.json.');
+  }
+  return { owner: publish.owner, repo: publish.repo };
+}
+
+function requestGitHub(apiPath, method, token) {
+  return githubApiRequest({
+    hostname: 'api.github.com',
+    path: apiPath,
+    method,
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: 'Bearer ' + token,
+      'X-GitHub-Api-Version': '2022-11-28',
+      'User-Agent': 'Prism-Release-Script'
+    }
+  });
+}
+
+async function replaceSameVersionRelease() {
+  const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+  if (!token) return;
+  const { owner, repo } = resolveGitHubConfig();
+  const tag = tagName();
+  const basePath = '/repos/' + encodeURIComponent(owner) + '/' + encodeURIComponent(repo);
+  const count = await replaceExistingRelease({
+    basePath,
+    tag,
+    request: (apiPath, method) => requestGitHub(apiPath, method, token)
+  });
+  if (count) log('  removed ' + count + ' published release(s) for ' + tag + '; the same tag will be recreated with this build.');
+  else log('  no existing GitHub release for ' + tag + '; a new release will be created.');
+}
+
+// electron-builder resolves the GitHub release body from releaseInfo, or from
+// a release-notes.md in the project directory. Generate that file from the
+// maintained template so the published description is comprehensive rather than
+// a bare version string. The generated copy is a build artifact (gitignored).
+function writeReleaseNotes() {
+  const templateFile = path.join(__dirname, 'release-notes.md');
+  if (!fs.existsSync(templateFile)) {
+    console.warn('  no release-notes.md template found - the release description will be the default version only.');
+    return;
+  }
+  const file = path.join(ROOT, 'release-notes.md');
+  fs.writeFileSync(file, createReleaseNotes(fs.readFileSync(templateFile, 'utf8'), VERSION), 'utf8');
+  log('  wrote comprehensive release notes to ' + path.relative(ROOT, file));
+}
 
 // shell:false when we spawn node directly. On Windows, routing an absolute
 // path like "C:\Program Files\nodejs\node.exe" through cmd.exe re-splits it on
@@ -239,21 +299,21 @@ generateIcons();
 verifyIconsTransparent();
 cleanStale();
 
-// Publishing is what gives the auto-updater a feed to read, so it is on by
-// default -- but only when a token is actually available. Without one this stays
-// a purely local build. It is skipped, never failed, so offline builds still work.
+// Publishing is what gives the auto-updater a feed to read, so it happens
+// whenever a token is available -- but never before the local build is verified.
 //
-// NOTE: --publish creates a GitHub Release per version. Re-running without
-// bumping "version" in package.json will fail, because the release already exists.
-// GitHub refuses to create a PUBLISHED release whose tag does not exist
-// ("Published releases must have a valid tag"), and electron-builder does not
-// reliably create that tag itself. Prepare it here so the publish step cannot
-// fail on it. Deliberately non-fatal: a local-only build must still work when
-// git is missing or the push is rejected.
+// A same-version run replaces the existing published release for that version
+// instead of failing: electron-builder refuses to upload to a release published
+// more than two hours ago, and GitHub will not reuse a tag that still has one.
+// The old release is deleted through the API with the same repository-scoped
+// token electron-builder uses, then the freshly built artifacts are uploaded to
+// a newly created release under the same tag.
+// Returns true when the tag is present on the remote. GitHub refuses to publish
+// a release whose tag is missing remotely ("Published releases must have a valid
+// tag"), and a same-version republish deletes the old release first, so an
+// unpushed tag must stop the run rather than leave users with no release at all.
 function ensureTag() {
-  let version;
-  try { version = require('../package.json').version; } catch (_) { return; }
-  const tag = 'v' + version;
+  const tag = tagName();
 
   // Do NOT assume the remote is called "origin". This repo's is named after the
   // owner ("shroomygod"), and hardcoding "origin" made the push fail with
@@ -266,8 +326,7 @@ function ensureTag() {
   }
   if (!remote) {
     console.warn('  no git remote found - cannot push tag ' + tag + ' automatically.');
-    console.warn('  if publishing fails with "must have a valid tag", create it by hand.\n');
-    return;
+    return false;
   }
 
   try {
@@ -285,25 +344,61 @@ function ensureTag() {
     const push = spawnSync('git', ['push', remote, tag], { encoding: 'utf8' });
     if (push.status !== 0) throw new Error((String(push.stderr || push.stdout || '').trim() || 'git push failed'));
     console.log('  pushed ' + tag + ' to ' + remote);
+    return true;
   } catch (e) {
     console.warn('  could not prepare tag ' + tag + ': ' + e.message);
-    console.warn('  if publishing fails with "must have a valid tag", run:');
-    console.warn('    git push ' + remote + ' ' + tag + '\n');
+    return false;
   }
 }
 
 const GH_TOKEN = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
-const publishArgs = GH_TOKEN ? ['--publish', 'always'] : [];
-if (GH_TOKEN) {
-  console.log('\n  GITHUB_TOKEN found - artifacts will be published to GitHub Releases.');
-  ensureTag();
-} else {
-  console.log('\n  no GITHUB_TOKEN set - building locally, skipping GitHub publish.');
-  console.log('  set it in this shell to publish:  $env:GITHUB_TOKEN = "ghp_..."\n');
-}
 
-run('npx', ['electron-builder', '--win', 'nsis', 'portable', ...publishArgs]);
+// Publishing replaces any existing release for this version, so the build has to
+// succeed before anything on GitHub is touched. Keep that order: build, verify,
+// then replace the release and upload.
+run('npx', ['electron-builder', '--win', 'nsis', 'portable']);
 
 verifyArtifacts();
 verifyPackagedPages();
 log('\nDone. Prism ' + VERSION + ' installer and blockmap are in the project root.');
+
+if (!GH_TOKEN) {
+  console.log('\n  no GITHUB_TOKEN set - skipping the GitHub publish step.');
+  console.log('  set it in this shell to publish:  $env:GITHUB_TOKEN = "ghp_..."\n');
+  process.exit(0);
+}
+
+console.log('\n  GitHub token found - publishing to GitHub Releases.');
+if (!ensureTag()) {
+  fail('Tag ' + tagName() + ' is not on the remote. Publishing the same version replaces the\n' +
+       'existing release, so the new tag must be pushed first or users would be\n' +
+       'left with no release. Push it, then re-run:  git push <remote> ' + tagName());
+}
+(async () => {
+  try {
+    writeReleaseNotes();
+    // electron-builder refuses to upload to a release published more than two
+    // hours ago, so the same-version release is replaced first and recreated
+    // from the freshly verified artifacts.
+    await replaceSameVersionRelease();
+    // Upload the artifacts that were just verified instead of rebuilding them.
+    // latest.yml is not optional: Prism's updater reads the release's
+    // latest.yml for the version and the installer SHA-512, so publishing
+    // without it would leave the feed unreadable and the new build invisible.
+    const uploadFiles = [
+      'Prism-' + VERSION + '-x64.exe',
+      'Prism-' + VERSION + '-x64.exe.blockmap',
+      'Prism-' + VERSION + '-portable.exe',
+      'latest.yml'
+    ];
+    const missingUploads = uploadFiles.filter((name) => !fs.existsSync(path.join(ROOT, name)));
+    if (missingUploads.length) {
+      fail('Refusing to publish: these build outputs are missing:\n  ' + missingUploads.join('\n  ') +
+           '\nThe GitHub release for this version was already replaced, so fix the build and re-run.');
+    }
+    run('npx', ['electron-builder', 'publish', '--policy', 'always', '--version', VERSION, '--files', ...uploadFiles]);
+    log('\nPublished Prism ' + VERSION + ' to GitHub Releases.');
+  } catch (error) {
+    fail('GitHub publish failed: ' + error.message);
+  }
+})();

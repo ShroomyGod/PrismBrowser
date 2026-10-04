@@ -10,10 +10,6 @@ if (location.protocol === 'prism:') {
     relaunch: () => ipcRenderer.invoke('prism:relaunch'),
     versions: () => ipcRenderer.invoke('prism:versions'),
 
-    // VPNGate directory (lists and exports profiles; does not connect)
-    vpnDirectory: (refresh) => ipcRenderer.invoke('prism:vpn:directory', { refresh: !!refresh }),
-    vpnSaveProfile: (host) => ipcRenderer.invoke('prism:vpn:save', { host }),
-
     // prism search
     search: (q, offset, limit) => ipcRenderer.invoke('prism:search:query', { q, offset, limit }),
     searchWeb: (q) => ipcRenderer.invoke('prism:search:web', { q }),

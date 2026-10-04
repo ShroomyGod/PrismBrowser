@@ -64,6 +64,16 @@ function handlePrism(request) {
       return abs ? serveFile(abs) : new Response('Not found', { status: 404 });
     }
 
+    // Internal shared page scripts/styles: prism://shared/<file>.
+    // These are served from src/pages with an allowlist rather than exposing
+    // arbitrary repository paths through the custom scheme.
+    if (pathname.startsWith('/shared/')) {
+      const rel = pathname.slice('/shared/'.length);
+      if (!/^(theme-engine|common)(\.js|\.css)$/.test(rel)) return new Response('Forbidden', { status: 403 });
+      const abs = safeJoin(PAGES_ROOT, rel);
+      return abs ? serveFile(abs) : new Response('Not found', { status: 404 });
+    }
+
     // Extension icons: prism://exticon/<extensionId>
     if (pathname.startsWith('/exticon/')) {
       const id = pathname.slice('/exticon/'.length);

@@ -4,19 +4,34 @@
   --line: #2b2b2b; --text: #ececec; --dim: #9a9a9a;
   --accent: #7c9cbf; --accent-soft: rgba(124,156,191,.16);
   --danger: #d9534f; --ok: #6f9f6f; --shadow: rgba(0,0,0,.5);
+  --gradient-a: transparent; --gradient-b: transparent; --gradient-c: transparent;
+  --page-gradient: none; --ui-scale: 1;
 }
 html[data-theme="light"] {
   --bg: #ffffff; --bg2: #f7f7f7; --bg3: #efefef;
   --line: #dcdcdc; --text: #1c1c1c; --dim: #616161;
   --accent: #3f6f9f; --accent-soft: rgba(63,111,159,.12);
   --danger: #c0392b; --ok: #3f7a46; --shadow: rgba(0,0,0,.2);
+  --gradient-a: transparent; --gradient-b: transparent; --gradient-c: transparent;
+  --page-gradient: none; --ui-scale: 1;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body {
-  font-family: "Segoe UI", system-ui, sans-serif; font-size: 14px;
-  background: var(--bg); color: var(--text); min-height: 100vh;
+  position: relative; isolation: isolate;
+  font-family: "Segoe UI", system-ui, sans-serif; font-size: calc(14px * var(--ui-scale, 1));
+  background-color: var(--bg); background-image: linear-gradient(180deg, var(--gradient-a, transparent), var(--gradient-b, transparent)), var(--page-gradient, none);
+  background-size: 200% 200%, 180% 180%; background-attachment: fixed, fixed;
+  color: var(--text); min-height: 100vh;
+  transition: background-color .22s ease, color .22s ease;
 }
+:root[data-motion="drift"] body { animation: page-gradient-drift var(--motion-duration, 8s) ease-in-out infinite alternate; }
+:root[data-motion="breathe"] body { animation: page-gradient-breathe var(--motion-duration, 8s) ease-in-out infinite; }
+:root[data-motion="pulse"] body { animation: page-gradient-pulse calc(var(--motion-duration, 8s) * .75) ease-in-out infinite; }
+:root[data-motion="wave"] body { animation: page-gradient-drift calc(var(--motion-duration, 8s) * .7) linear infinite alternate; }
+@keyframes page-gradient-drift { to { background-position: 100% 80%; } }
+@keyframes page-gradient-breathe { 50% { background-position: 70% 30%; } }
+@keyframes page-gradient-pulse { 50% { background-size: 220% 220%; } }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 button {
@@ -33,6 +48,21 @@ input[type="text"], input[type="search"], input[type="password"], input[type="ur
   border: 1px solid var(--line); border-radius: 9px; padding: 9px 12px; user-select: text;
 }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); }
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, a:focus-visible {
+  outline: 3px solid var(--accent); outline-offset: 3px;
+}
+:root[data-focus-visible="subtle"] :focus-visible { outline-width: 2px; outline-offset: 1px; }
+:root[data-contrast="high"] { --line: var(--text); --line-soft: var(--text); --dim: var(--text); }
+:root[data-contrast="high"] .card,
+:root[data-contrast="high"] input,
+:root[data-contrast="high"] select,
+:root[data-contrast="high"] button,
+:root[data-contrast="high"] a { border-width: 2px; }
+:root[data-large-targets="true"] button,
+:root[data-large-targets="true"] .topnav a,
+:root[data-large-targets="true"] .switch { min-height: 44px; }
+:root[data-large-targets="true"] button { padding-block: 10px; }
+:root[data-large-targets="true"] input[type="checkbox"] { width: 22px; height: 22px; }
 textarea { width: 100%; min-height: 90px; resize: vertical; font-family: Consolas, monospace; font-size: 12.5px; }
 .wrap { max-width: 920px; margin: 0 auto; padding: 28px 24px 60px; }
 h1 { font-size: 22px; font-weight: 650; margin: 6px 0 18px; display: flex; align-items: center; gap: 12px; }
@@ -83,6 +113,56 @@ table.list tr:hover td { background: color-mix(in srgb, var(--accent-soft) 60%, 
 .page-head img.wordmark { height: 30px; width: auto; border-radius: 0; }
 .page-head h1 { margin: 0; }
 
+/* ---------- generated theme + accessibility ---------- */
+:root[data-contrast="high"] {
+  --line: currentColor;
+  --line-soft: currentColor;
+  --dim: var(--text);
+  --text-dim: var(--text);
+  --text-faint: var(--text);
+  --accent-soft: color-mix(in srgb, var(--accent) 26%, transparent);
+}
+:root[data-contrast="high"] .card,
+:root[data-contrast="high"] input,
+:root[data-contrast="high"] select,
+:root[data-contrast="high"] button,
+:root[data-contrast="high"] a { border-width: 2px; }
+:root[data-focus-visible="strong"] :focus-visible {
+  outline: 3px solid var(--accent) !important;
+  outline-offset: 3px !important;
+  box-shadow: 0 0 0 2px var(--bg) !important;
+}
+:root[data-large-targets="true"] button,
+:root[data-large-targets="true"] .topnav a,
+:root[data-large-targets="true"] .switch { min-height: 44px; }
+:root[data-large-targets="true"] button { padding-block: 10px; }
+:root[data-large-targets="true"] input[type="checkbox"] { width: 22px; height: 22px; }
+.theme-gallery-card { padding: 14px; }
+.theme-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 9px; margin-top: 13px; max-height: 330px; overflow-y: auto; padding: 2px;
+}
+.theme-swatch {
+  position: relative; min-height: 68px; overflow: hidden; isolation: isolate;
+  display: flex; align-items: end; justify-content: space-between; gap: 6px;
+  padding: 8px; border: 1px solid var(--line); border-radius: 10px;
+  color: var(--swatch-ink, var(--text)); background-color: var(--bg3);
+  background-image: linear-gradient(125deg, var(--swatch-a), var(--swatch-b), var(--swatch-c));
+  text-shadow: 0 1px 3px rgba(0,0,0,.45);
+  text-align: left; font-size: 11px;
+}
+.theme-swatch[aria-pressed="true"] { outline: 3px solid var(--accent); outline-offset: 2px; }
+.theme-swatch:hover { transform: translateY(-2px); }
+.theme-swatch .swatch-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.theme-swatch .swatch-check { font-size: 14px; font-weight: 800; }
+#text-scale { accent-color: var(--accent); }
+:root[data-motion="shimmer"] .theme-swatch::before,
+:root[data-motion="wave"] .theme-swatch::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,.32) 50%, transparent 60%);
+  background-size: 220% 100%; animation: theme-shimmer var(--motion-duration, 8s) linear infinite;
+}
+@keyframes theme-shimmer { to { background-position: -220% 0; } }
 /* ---------- motion ----------
    Interactive surfaces animate so the UI reads as responsive instead of
    mechanical. Deliberately short and low-amplitude: enough to feel
@@ -100,8 +180,13 @@ button:active { transform: translateY(1px); }
 .row > .card, .card { transition: border-color .13s ease; }
 
 /* Motion is decoration, never information. Honour the OS setting. */
+:root[data-reduce-motion="reduce"] *,
+:root[data-reduce-motion="reduce"] *:before,
+:root[data-reduce-motion="reduce"] *:after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; scroll-behavior: auto !important; }
 @media (prefers-reduced-motion: reduce) {
-  *, *:before, *:after {
+  :root[data-reduce-motion="system"] *,
+  :root[data-reduce-motion="system"] *:before,
+  :root[data-reduce-motion="system"] *:after {
     animation-duration: .001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: .001ms !important;

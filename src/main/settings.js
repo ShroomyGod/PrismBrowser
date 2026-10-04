@@ -31,7 +31,12 @@ const DEFAULTS = {
   appearance: {
     theme: 'dark',            // 'dark' | 'light' | 'system'
     bookmarksBar: false,
-    siteTheme: 'auto'         // 'auto' follows browser appearance only on sites that advertise scheme support; dark/light/off are optional hints
+    siteTheme: 'auto',        // 'auto' follows browser appearance only on sites that advertise scheme support; dark/light/off are optional hints
+    visualTheme: { hue: 215, saturation: 75, gradient: 'aurora', motion: 'shimmer', intensity: 45 },
+    accessibility: {
+      textScale: 100, contrast: 'normal', largerTargets: false,
+      reducedMotion: 'system', focusIndicators: true
+    }
   },
   privacy: {
     adblock: {
@@ -179,7 +184,19 @@ class Settings {
       // The chrome lives in a child WebContentsView, not in win.webContents.
       let wc = null;
       try { wc = tabs.shellContentsForWindow(win); } catch (_) { /* tabs not loaded yet */ }
-      (wc || win.webContents).send('prism:settings-changed', this.all());
+      const snapshot = this.all();
+      (wc || win.webContents).send('prism:settings-changed', snapshot);
+      // Internal pages run in WebContentsViews separate from the BrowserWindow's
+      // own webContents. Notify those page renderers too so shared appearance
+      // settings apply immediately outside the shell.
+      if (tabs.tabs && tabs.windowRecord) {
+        for (const tab of tabs.tabs.values()) {
+          const record = tabs.windowRecord(tab.winId);
+          if (!record || record.win !== win || !tab.url.startsWith('prism://')) continue;
+          const page = tab.view && tab.view.webContents;
+          if (page && !page.isDestroyed()) page.send('prism:settings-changed', snapshot);
+        }
+      }
       if (siteThemeChanged || (patch && patch.appearance && 'theme' in patch.appearance)) {
         tabs.reapplyCompatibleSiteThemeToAllTabs();
       }
@@ -221,7 +238,7 @@ class Settings {
       return { url: text, isSearch: false };
     }
     // Internal browser pages: recognize keywords and navigate directly.
-    const INTERNAL_PAGES = ['settings', 'history', 'bookmarks', 'downloads', 'passwords', 'extensions', 'privacy', 'search', 'newtab', 'blocked', 'error', 'vpn'];
+    const INTERNAL_PAGES = ['settings', 'history', 'bookmarks', 'downloads', 'passwords', 'extensions', 'privacy', 'search', 'newtab', 'blocked', 'error'];
     const lower = text.toLowerCase();
     if (INTERNAL_PAGES.includes(lower)) {
       return { url: 'prism://' + lower, isSearch: false };
