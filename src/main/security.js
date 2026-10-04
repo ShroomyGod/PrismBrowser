@@ -73,6 +73,11 @@ class Security {
       const meta = FEEDS[name];
       if (!meta) continue;
       if (meta.kind === 'urlhaus-csv') {
+        // Payload-delivery feed. These are one-off malware download URLs, not
+        // evidence that a whole domain is malicious. Adding the HOST here is
+        // what flagged github.com: phishing and malware kits are routinely
+        // hosted on large public sites under a single path, so one bad URL
+        // condemned the entire site. Block the exact URL only.
         let header = null;
         for (const line of text.split(/\r?\n/)) {
           if (!line || line.startsWith('#')) continue;
@@ -80,19 +85,20 @@ class Security {
           const cells = splitCsvLine(line);
           const iUrl = header.indexOf('url');
           const u = (cells[iUrl >= 0 ? iUrl : 2] || '').trim();
-          const h = hostOf(u);
-          if (h && !h.endsWith('.arpa')) hosts.add(h);
+          if (/^https?:/i.test(u)) urls.add(u.split('?')[0].split('#')[0]);
         }
       } else if (meta.kind === 'domains') {
+        // A genuine domain feed: whole malicious domains, so host-level
+        // blocking is the correct granularity for this one.
         for (const line of text.split(/\r?\n/)) {
           const d = line.trim().toLowerCase();
           if (d && !d.startsWith('#') && d.includes('.')) hosts.add(d);
         }
       } else if (meta.kind === 'urls') {
+        // Same as URLhaus: full-URL feed, so exact-URL granularity only.
         for (const line of text.split(/\r?\n/)) {
           const u = line.trim();
-          const h = hostOf(u);
-          if (h) { hosts.add(h); urls.add(u.split('?')[0]); }
+          if (/^https?:/i.test(u)) urls.add(u.split('?')[0].split('#')[0]);
         }
       }
     }

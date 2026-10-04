@@ -93,8 +93,12 @@ function setupPartitions(tabs) {
     privSession.setUserAgent(uaOverride);
   }
 
-  // Downloads + malware scanning (normal profile only)
+  // Downloads + malware scanning. BOTH partitions get the handler: attaching it
+  // to the main session only meant anything downloaded from a private window
+  // bypassed the hash scan and the quarantine entirely. Incognito is a privacy
+  // feature, not a way to disable antivirus.
   security.attachDownloadHandler(mainSession);
+  security.attachDownloadHandler(privSession);
 
   // Extension host session
   extensions.init(mainSession);

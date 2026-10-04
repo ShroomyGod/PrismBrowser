@@ -42,7 +42,8 @@ const DEFAULTS = {
       perSite: {}             // domain -> 'allow' (disabled on that site)
     },
     httpsFirst: true,
-    dnt: true
+    dnt: true,
+    popupBlocking: true      // deny window.open() calls that request an explicit size
   },
   security: {
     malwareEnabled: true,
@@ -220,7 +221,7 @@ class Settings {
       return { url: text, isSearch: false };
     }
     // Internal browser pages: recognize keywords and navigate directly.
-    const INTERNAL_PAGES = ['settings', 'history', 'bookmarks', 'downloads', 'passwords', 'extensions', 'privacy', 'search', 'newtab', 'blocked', 'error'];
+    const INTERNAL_PAGES = ['settings', 'history', 'bookmarks', 'downloads', 'passwords', 'extensions', 'privacy', 'search', 'newtab', 'blocked', 'error', 'vpn'];
     const lower = text.toLowerCase();
     if (INTERNAL_PAGES.includes(lower)) {
       return { url: 'prism://' + lower, isSearch: false };

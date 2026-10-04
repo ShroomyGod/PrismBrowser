@@ -36,7 +36,11 @@
     const b = document.createElement('span');
     const raw = String(item.state || item.status || 'completed').toLowerCase();
     if (raw.includes('progress') || raw.includes('active')) b.className = 'badge';
-    else if (raw.includes('interrupt') || raw.includes('fail') || raw.includes('cancel')) b.className = 'badge red';
+    // quarantined/blocked MUST NOT fall through to green. security.js moves a
+    // detected file into quarantine and sets state 'quarantined', which used to
+    // match none of these branches and rendered as a reassuring green badge.
+    else if (raw.includes('quarantin') || raw.includes('blocked') ||
+             raw.includes('interrupt') || raw.includes('fail') || raw.includes('cancel')) b.className = 'badge red';
     else b.className = 'badge green';
     b.textContent = raw;
     return b;
@@ -73,10 +77,18 @@
 
       const flag = document.createElement('td');
       if (item.threat) {
+        const box = document.createElement('div');
         const t = document.createElement('span');
         t.className = 'badge red';
-        t.textContent = 'blocked';
-        flag.append(t);
+        t.textContent = String(item.state || '').toLowerCase().includes('quarantin') ? 'quarantined' : 'blocked';
+        // Surface WHY it was flagged - the detector's verdict is the only
+        // thing that tells the user whether this was a false positive.
+        const why = document.createElement('div');
+        why.className = 'muted';
+        why.style.marginTop = '3px';
+        why.textContent = item.threat;
+        box.append(t, why);
+        flag.append(box);
       } else {
         flag.append(stateBadge(item));
       }

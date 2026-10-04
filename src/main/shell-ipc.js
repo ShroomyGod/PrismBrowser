@@ -13,6 +13,7 @@ const prismSearchWeb = require('./prism-search-web');
 const crawler = require('./crawler');
 const { index } = require('./index-store');
 const menus = require('./menus');
+const vpngate = require('./vpngate');
 
 function registerIpc(tabs) {
   // The shell lives in its own WebContentsView, so resolve the owning
@@ -134,14 +135,24 @@ function registerIpc(tabs) {
   ipcMain.handle('prism:downloads:clear', () => { stores.clearDownloads(); return true; });
 
   // ---------- passwords ----------
-  ipcMain.handle('prism:passwords:list', () => stores.listPasswords());
-  ipcMain.handle('prism:passwords:add', (_e, { origin, username, password }) => {
+  // A private window must not be able to read or write the permanent vault:
+  // prism://passwords is reachable from any window, and a saved credential is
+  // exactly the kind of thing incognito exists to keep out of reach. Writing
+  // from incognito is also a lie - the user is told nothing is kept, yet the
+  // password would outlive the window in the encrypted store.
+  const privSender = (e) => tabs.isPrivateWebContents && tabs.isPrivateWebContents(e.sender);
+  ipcMain.handle('prism:passwords:list', (e) => (privSender(e) ? [] : stores.listPasswords()));
+  ipcMain.handle('prism:passwords:add', (e, { origin, username, password }) => {
+    if (privSender(e)) return false;
     if (!origin || !password) return false;
     stores.addPassword(origin, username || '', password);
     return true;
   });
-  ipcMain.handle('prism:passwords:remove', (_e, { id }) => { stores.removePassword(id); return true; });
-  ipcMain.handle('prism:passwords:reveal', (_e, { id }) => stores.revealPassword(id));
+  ipcMain.handle('prism:passwords:remove', (e, { id }) => {
+    if (privSender(e)) return false;
+    stores.removePassword(id); return true;
+  });
+  ipcMain.handle('prism:passwords:reveal', (e, { id }) => (privSender(e) ? '' : stores.revealPassword(id)));
 
   // ---------- settings ----------
   ipcMain.handle('prism:settings:get', () => settings.all());
@@ -170,6 +181,8 @@ function registerIpc(tabs) {
   ipcMain.handle('prism:search:url', (_e, { q }) =>
     settings.engineSearchUrl(settings.all().search.defaultEngine, String(q || '')));
   ipcMain.handle('prism:search:stats', () => prismSearch.stats());
+  ipcMain.handle('prism:vpn:directory', (_e, opts) => vpngate.directory(!!(opts && opts.refresh)));
+  ipcMain.handle('prism:vpn:save', (_e, { host }) => vpngate.saveProfile(host));
   ipcMain.on('prism:crawl:run', (_e, { maxPages }) => { crawler.run({ maxPages }); });
   ipcMain.on('prism:crawl:stop', () => crawler.stop());
   ipcMain.handle('prism:crawl:status', () => crawler.status());
@@ -189,6 +202,20 @@ function registerIpc(tabs) {
       const id = await extensions.installFromStore(source, input);
       return { id };
     } catch (err) { return { error: String(err.message || err) }; }
+  });
+  // Store search + the public store URL, so installing never requires pasting
+  // a link the user has to go and find first.
+  ipcMain.handle('prism:extensions:search', async (_e, { source, query }) => {
+    try {
+      return { results: await extensions.search(source, query) };
+    } catch (err) { return { error: String(err.message || err) }; }
+  });
+  ipcMain.handle('prism:extensions:store-url', (_e, { source }) => extensions.storeUrl(source));
+  ipcMain.handle('prism:extensions:open-page', (e, { source }) => {
+    const wid = tabs.focusedWindowId() || [...tabs.windows.keys()][0];
+    if (!wid) return false;
+    tabs.createTab(wid, extensions.storeUrl(source));
+    return true;
   });
   ipcMain.handle('prism:extensions:remove', (_e, { id }) => extensions.remove(id));
   ipcMain.handle('prism:extensions:reload', (_e, { id }) => extensions.reload(id));

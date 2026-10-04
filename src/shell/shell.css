@@ -46,6 +46,38 @@ html[data-theme="light"] {
   --danger: #c0392b;
   --ok: #3f7a46;
 }
+/* ---------- private / incognito chrome ----------
+ * shell.js sets body.private when the snapshot reports private:true. It
+ * deliberately overrides BOTH themes, so a private window is dark purple no
+ * matter what the profile is set to — the chrome colour alone is the tell.
+ * These vars sit after the [data-theme] rules on purpose: specificity of
+ * body.private wins over html[data-theme=...] for the same property. */
+body.private {
+  --bg: #14101c;
+  --bg2: #1b1630;
+  --bg3: #251d42;
+  --bg4: #2f2554;
+  --line: #3a2f63;
+  --line-soft: #2a2248;
+  --text: #efeaff;
+  --text-dim: #b0a4d4;
+  --text-faint: #8274ab;
+  --accent: #b794f6;
+  --accent-soft: rgba(183, 148, 246, 0.16);
+}
+body.private #chrome-top,
+body.private #toolbar,
+body.private #tabstrip { background: var(--bg2); }
+body.private .tab { color: var(--text-dim); }
+body.private .tab.active { background: var(--bg3); color: var(--text); }
+body.private .tab.active::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 0; height: 2px;
+  background: var(--accent); border-radius: 2px 2px 0 0;
+}
+body.private #omni-dropdown,
+body.private #menu-panel,
+body.private #shield-pop,
+body.private #findbar { border-color: var(--line); }
 * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
 html, body { height: 100%; overflow: hidden; }
 body {
@@ -72,6 +104,16 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   -webkit-app-region: drag; flex: none;
 }
 #tabs { display: flex; align-items: flex-end; height: 40px; max-width: calc(100% - 140px); overflow: hidden; }
+
+/* The incognito pill in the tab strip. Hidden by shell.js in normal windows. */
+#priv-badge {
+  -webkit-app-region: no-drag;
+  display: flex; align-items: center; gap: 5px; flex: none;
+  height: 22px; margin: 0 8px 7px 0; padding: 0 9px;
+  border-radius: 999px; background: var(--accent-soft); color: var(--accent);
+  font-size: 11px; font-weight: 600; letter-spacing: .2px; white-space: nowrap;
+}
+#priv-badge svg { flex: none; }
 .tab {
   -webkit-app-region: no-drag;
   width: var(--tab-w); min-width: 48px; max-width: var(--tab-w);
@@ -152,7 +194,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   from { opacity: 0; transform: translateY(-5px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-#omni-dropdown, #menu-panel, #shield-pop {
+#omni-dropdown, #menu-panel, #shield-pop, #ext-pop {
   animation: prism-drop-in .13s ease-out;
 }
 /* The find bar and toasts slide from the edge they are anchored to. */
@@ -185,7 +227,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
  * JS aligns the omnibox dropdown to the omnibox itself.
  * Opaque + isolated: they must paint solid above the page view, never let
  * page content bleed through or overlap them. */
-#omni-dropdown, #menu-panel, #shield-pop {
+#omni-dropdown, #menu-panel, #shield-pop, #ext-pop {
   position: absolute; z-index: 50; background: var(--bg2);
   border: 1px solid var(--line); border-radius: 10px;
   box-shadow: 0 10px 34px rgba(0,0,0,.55); overflow: hidden;
@@ -226,6 +268,25 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   color: var(--accent); font-size: 12px; padding: 6px 0 0; text-align: left; width: 100%;
 }
 .pop-link:hover { text-decoration: underline; }
+
+/* ---------- extensions dropdown ---------- */
+/* Anchored under the toolbar, right-aligned so it sits below its own button. */
+#ext-pop {
+  top: var(--chrome-h); right: 8px; width: 268px; padding: 11px 12px;
+}
+#ext-btn { position: relative; }
+#ext-list { max-height: 260px; overflow-y: auto; margin-bottom: 4px; }
+.ext-row {
+  display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
+  padding: 7px 8px; border-radius: 7px; color: var(--text); font-size: 12.5px;
+}
+.ext-row:hover { background: var(--bg3); }
+.ext-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex: none;
+  background: var(--accent);
+}
+.ext-dot.off { background: var(--text-faint); }
+.ext-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .switch { position: relative; width: 34px; height: 19px; flex: none; }
 .switch input { opacity: 0; width: 0; height: 0; }
 .slider {
@@ -285,10 +346,20 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
   border-radius: 9px; padding: 10px 14px; width: 320px; font-size: 12px; line-height: 1.45;
   box-shadow: 0 10px 34px rgba(0,0,0,.55);
   animation: slide-in .18s ease-out;
+  position: relative;
 }
 .toast.danger { border-left-color: var(--danger); }
-.toast .t-title { font-weight: 600; margin-bottom: 3px; }
+.toast .t-title { font-weight: 600; margin-bottom: 3px; padding-right: 18px; }
 .toast button { color: var(--accent); padding: 4px 0 0; }
+/* Dismiss control: absolutely placed so it cannot reflow the toast body, and
+   given the text colour explicitly so the `.toast button` rule above does not
+   paint it accent-blue. */
+.toast .t-close {
+  position: absolute; top: 7px; right: 7px; width: 20px; height: 20px;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0; border-radius: 5px; color: var(--text-faint);
+}
+.toast .t-close:hover { background: var(--bg4); color: var(--text); }
 @keyframes slide-in { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
 
 #load-progress {

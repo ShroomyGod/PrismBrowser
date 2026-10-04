@@ -18,6 +18,56 @@ const settings = require('./settings');
 const WEBSTORE_CRX = 'https://clients2.google.com/service/update2/crx';
 const EDGE_CRX = 'https://edge.microsoft.com/extensionwebstorebase/v1/crx';
 
+// Store browse/search pages. Opened in a Prism tab so the user can pick an
+// extension and install it by ID, instead of only being able to paste a URL.
+const STORE_PAGES = {
+  chrome: 'https://chromewebstore.google.com/',
+  edge: 'https://microsoftedge.microsoft.com/addons'
+};
+
+// Search endpoints. Both return HTML rather than JSON, so only the extension IDs
+// and names are scraped out; the store page itself still does the rendering.
+const STORE_SEARCH = {
+  chrome: (q) => 'https://chromewebstore.google.com/search/' + encodeURIComponent(q),
+  edge: (q) => 'https://microsoftedge.microsoft.com/addons/search/' + encodeURIComponent(q)
+};
+
+// Pull [id, name] pairs out of a store search page. Chrome embeds an
+// AF_initDataCallback payload; Edge uses plain anchors. Both are scraped
+// heuristically and any miss is simply a shorter list, never a crash.
+function parseStoreResults(source, html) {
+  const out = [];
+  const seen = new Set();
+  const push = (id, name) => {
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    out.push({ id, name: (name || '').replace(/\s+/g, ' ').trim().slice(0, 90) || id });
+  };
+  if (source === 'edge') {
+    const re = /addons\.microsoft\.com\/[a-z-]+\/([a-p]{32})[^"']*"[^>]*>\s*([^<]{2,120})/gi;
+    let m;
+    while ((m = re.exec(html))) push(m[1], m[2]);
+    return out;
+  }
+  const re = /"([a-p]{32})","(?:[^"]{0,400}?,)?"([^"]{3,160})"/g;
+  let m;
+  while ((m = re.exec(html)) && out.length < 60) push(m[1], m[2]);
+  return out;
+}
+
+async function searchStore(source, query) {
+  const build = STORE_SEARCH[source];
+  if (!build) throw new Error('Unknown store: ' + source);
+  const res = await net.fetch(build(query), {
+    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/126.0 Safari/537.36' },
+    signal: AbortSignal.timeout(20000)
+  });
+  if (!res.ok) throw new Error('The store returned HTTP ' + res.status + '.');
+  const results = parseStoreResults(source, await res.text());
+  if (!results.length) throw new Error('No extensions found for "' + query + '". Try a different word.');
+  return results;
+}
+
 function extIdFromInput(input) {
   const s = String(input || '').trim();
   if (/^[a-p]{32}$/i.test(s)) return s.toLowerCase();
@@ -145,10 +195,21 @@ class Extensions {
     return { id };
   }
 
+  // Public URL of a store listing, so the Extensions page can offer a real
+  // "browse the store" link instead of only a paste-a-URL box.
+  storeUrl(source) {
+    return STORE_PAGES[source === 'edge' ? 'edge' : 'chrome'];
+  }
+
+  // Search a store by name. Returns [{id, name}] for one-click install.
+  async search(source, query) {
+    return searchStore(source === 'edge' ? 'edge' : 'chrome', String(query || '').trim());
+  }
+
   async installFromStore(source, input) {
     if (!this.session) throw new Error('Session not ready');
     const id = extIdFromInput(input);
-    if (!id) throw new Error('Could not read an extension ID from that input. Paste the store URL or the 32-letter ID.');
+    if (!id) throw new Error('Could not read an extension ID. Search the store below, or paste a store URL or 32-letter ID.');
 
     const prodVersion = process.versions.chrome || '126.0.0.0';
     const url = source === 'edge'

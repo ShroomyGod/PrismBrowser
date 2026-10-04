@@ -12,6 +12,7 @@ let state = {
   adblockEnabled: true,
   theme: 'dark',
   bookmarksBar: false,
+  private: false,      // this whole window is an incognito window
   settings: null
 };
 
@@ -255,7 +256,7 @@ function hideDropdown() {
 // toasts) — otherwise the page hides them. Poll once per frame and report the
 // bottom edge; main applies it as the shell view's height. Overlays are all
 // top-anchored so a single rectangle from y=0 always covers them.
-const OVERLAY_IDS = ['omni-dropdown', 'menu-panel', 'shield-pop', 'findbar', 'load-progress', 'toasts', 'status-bubble'];
+const OVERLAY_IDS = ['omni-dropdown', 'menu-panel', 'shield-pop', 'ext-pop', 'findbar', 'load-progress', 'toasts', 'status-bubble'];
 let lastExtent = -1;
 function computeNeed() {
   try {
@@ -294,6 +295,10 @@ function syncExtentNow() {
 function hasOpenOverlay() {
   for (const id of OVERLAY_IDS) {
     const e = $(id);
+    // #toasts has no inline display, so `style.display !== 'none'` was always
+    // true for it and this returned true permanently, keeping the rAF extent
+    // loop running for the life of the window. Test emptiness for it instead.
+    if (id === 'toasts') { if (e && e.childElementCount) return true; continue; }
     if (e && e.style.display !== 'none') return true;
   }
   return false;
@@ -350,6 +355,7 @@ document.addEventListener('click', (ev) => {
   let changed = false;
   if (!$('omni-dropdown').contains(ev.target) && ev.target !== omni && $('omni-dropdown').style.display !== 'none') { hideDropdown(); changed = true; }
   if (!$('menu-panel').contains(ev.target) && ev.target.closest && !ev.target.closest('#menu-btn') && $('menu-panel').style.display !== 'none') { $('menu-panel').style.display = 'none'; changed = true; }
+  if (!$('ext-pop').contains(ev.target) && ev.target.closest && !ev.target.closest('#ext-btn') && $('ext-pop').style.display !== 'none') { $('ext-pop').style.display = 'none'; changed = true; }
   if (!$('shield-pop').contains(ev.target) && ev.target.closest && !ev.target.closest('#shield') && $('shield-pop').style.display !== 'none') { $('shield-pop').style.display = 'none'; changed = true; }
   if (changed) syncExtentNow();
 });
@@ -380,10 +386,71 @@ $('shield').addEventListener('click', () => {
   const pop = $('shield-pop');
   const show = pop.style.display === 'none';
   $('menu-panel').style.display = 'none';
+  $('ext-pop').style.display = 'none';
   pop.style.display = show ? '' : 'none';
   if (show) refreshShieldPop();
   syncExtentNow();
 });
+// ---------- extensions dropdown (the toolbar "puzzle piece") ----------
+// Lists what is installed and opens each one's management page. Electron's
+// extension support has no toolbar-popup surface, so an extension whose UI is
+// only a popup cannot be shown here; we point at its management page instead.
+const extPop = $('ext-pop');
+const extList = $('ext-list');
+let extItems = [];
+
+function renderExtList() {
+  extList.textContent = '';
+  const badge = $('ext-count');
+  badge.style.display = extItems.length ? '' : 'none';
+  badge.textContent = String(extItems.length);
+  if (!extItems.length) {
+    const empty = el('div', 'pop-note');
+    empty.textContent = 'No extensions installed yet.';
+    extList.appendChild(empty);
+    return;
+  }
+  for (const x of extItems) {
+    const row = el('button', 'ext-row');
+    const dot = el('span', 'ext-dot' + (x.active ? '' : ' off'));
+    const nm = el('span', 'ext-name');
+    nm.textContent = x.name || x.id;
+    nm.title = x.name || x.id;
+    row.append(dot, nm);
+    row.title = (x.name || x.id) + '  -  click to open its page';
+    row.addEventListener('click', () => {
+      extPop.style.display = 'none';
+      S.newTab(WID, 'prism://extensions');
+    });
+    extList.appendChild(row);
+  }
+}
+
+async function refreshExtList() {
+  try {
+    const list = await S.extensionsList();
+    extItems = Array.isArray(list) ? list : [];
+  } catch (_) { extItems = []; }
+  renderExtList();
+}
+
+$('ext-btn').addEventListener('click', () => {
+  const show = extPop.style.display === 'none';
+  // Only one toolbar popup at a time.
+  $('menu-panel').style.display = 'none';
+  $('shield-pop').style.display = 'none';
+  extPop.style.display = show ? '' : 'none';
+  if (show) refreshExtList();
+  syncExtentNow();
+});
+$('ext-store-chrome').addEventListener('click', () => { extPop.style.display = 'none'; S.extensionsOpenPage('chrome'); syncExtentNow(); });
+$('ext-store-edge').addEventListener('click', () => { extPop.style.display = 'none'; S.extensionsOpenPage('edge'); syncExtentNow(); });
+$('ext-manage').addEventListener('click', () => { extPop.style.display = 'none'; S.newTab(WID, 'prism://extensions'); syncExtentNow(); });
+S.onExtensionsChanged(() => refreshExtList());
+// Prime the count/badge at boot rather than waiting for the first popup open,
+// so the toolbar button reflects reality from the first frame.
+refreshExtList();
+
 $('menu-btn').addEventListener('click', () => {
   const panel = $('menu-panel');
   const show = panel.style.display === 'none';
@@ -445,22 +512,29 @@ $('menu-panel').addEventListener('click', async (ev) => {
   if (act === 'new-tab') S.newTab(WID);
   else if (act === 'private') S.newPrivateWindow();
   else if (act === 'search-home') S.newTab(WID, 'prism://search');
+  else if (act === 'vpn') S.newTab(WID, 'prism://vpn');
   else if (act === 'update-lists') { toast('Updating protection lists...', 'Updating ad-block and malware feeds in the background.'); }
   else if (act === 'check-update') {
-    toast('Checking for updates...', 'Contacting the update server.');
-    const st = await S.checkForUpdates();
-    if (st && st.error) toast('Update check failed', st.error, true);
-    else if (st && st.downloaded) {
-      pendingUpdate = { version: st.version, downloaded: true };
-      showUpdateButton(pendingUpdate);
-      toast('Update ready', 'Version ' + st.version + ' is ready to install.', false, 'Update now', () => S.installUpdate());
+    const pending = toast('Checking for updates...', 'Contacting the update server.');
+    try {
+      const st = await S.checkForUpdates();
+      if (st && st.error) toast('Update check failed', st.error, true);
+      else if (st && st.downloaded) {
+        pendingUpdate = { version: st.version, downloaded: true };
+        showUpdateButton(pendingUpdate);
+        toast('Update ready', 'Version ' + st.version + ' is ready to install.', false, 'Update now', () => S.installUpdate());
+      }
+      else if (st && st.available) {
+        pendingUpdate = { version: st.version, downloaded: false };
+        showUpdateButton(pendingUpdate);
+        toast('Update downloading', 'Version ' + st.version + ' - ' + (st.percent || 0) + '%');
+      }
+      else toast('You are up to date', 'Prism ' + (st && st.version) + ' is the latest version.');
+    } catch (e) {
+      toast('Update check failed', (e && e.message) || String(e), true);
+    } finally {
+      pending(); // the answer replaces the progress notice, it does not stack on it
     }
-    else if (st && st.available) {
-      pendingUpdate = { version: st.version, downloaded: false };
-      showUpdateButton(pendingUpdate);
-      toast('Update downloading', 'Version ' + st.version + ' - ' + (st.percent || 0) + '%');
-    }
-    else toast('You are up to date', 'Prism ' + (st && st.version) + ' is the latest version.');
   }
   else if (act === 'bookmarks-bar') S.bookmarksBarToggle();
   else if (act === 'about') S.newTab(WID, 'prism://settings#about');
@@ -536,18 +610,36 @@ function runFind(forward, findNext) {
 }
 
 // ---------- toasts ----------
+// Returns a dismiss() handle so a caller can retire an in-progress toast when
+// its result arrives, instead of leaving "Checking..." stacked above the answer.
 function toast(title, body, danger, actionLabel, action) {
   const t = el('div', 'toast' + (danger ? ' danger' : ''));
+  let gone = false;
+  const dismiss = () => {
+    if (gone) return;
+    gone = true;
+    t.remove();
+    syncExtentNow();
+  };
   const tt = el('div', 't-title'); tt.textContent = title; t.appendChild(tt);
   if (body) { const b = el('div'); b.textContent = body; t.appendChild(b); }
   if (actionLabel) {
-    const btn = el('button'); btn.textContent = actionLabel;
-    btn.addEventListener('click', () => { action && action(); t.remove(); syncExtentNow(); });
+    const btn = el('button', 't-action'); btn.textContent = actionLabel;
+    btn.addEventListener('click', () => { action && action(); dismiss(); });
     t.appendChild(btn);
   }
+  // Explicit close control. The 12s timer is a fallback, not the only way out:
+  // an update prompt the user is still reading must not vanish under them.
+  const x = el('button', 't-close');
+  x.title = 'Dismiss';
+  x.setAttribute('aria-label', 'Dismiss notification');
+  x.innerHTML = ICONS.close;
+  x.addEventListener('click', dismiss);
+  t.appendChild(x);
   $('toasts').appendChild(t);
   syncExtentNow();
-  setTimeout(() => { t.remove(); syncExtentNow(); }, 12000);
+  setTimeout(dismiss, 12000);
+  return dismiss;
 }
 
 // ---------- theme ----------
@@ -559,12 +651,32 @@ function applyTheme() {
   document.documentElement.dataset.theme = theme;
 }
 
+// ---------- private / incognito chrome ----------
+// Driven by the `private` flag the main process puts on every snapshot. It is a
+// property of the WINDOW, not the tab, so it is set once per snapshot rather
+// than per tab: recolouring, the pill and the window title all key off it.
+function applyPrivate() {
+  const priv = !!state.private;
+  document.body.classList.toggle('private', priv);
+  const badge = $('priv-badge');
+  if (badge) badge.style.display = priv ? '' : 'none';
+  // With frame:false the native title is what Windows shows in the taskbar and
+  // Alt+Tab, so this is the only thing that marks the window outside Prism.
+  document.title = priv ? 'Incognito — Prism Browser' : 'Prism Browser';
+  if (priv && !state.privateAnnounced) {
+    state.privateAnnounced = true;
+    toast('Incognito', 'Nothing from this window is saved to your device. Cookies, history and site data are cleared when you close it.', null);
+  }
+}
+
 // ---------- events from main ----------
 S.onTabs((data) => {
   state.tabs = data.tabs;
   state.active = data.active;
   state.bookmarksBar = !!data.bookmarksBar;
+  state.private = !!data.private;
   state.tabs._bookmarks = data.bookmarks || [];
+  applyPrivate();
   renderTabs();
   renderBookmarksBar();
   setOmniboxFromState(data.active);
@@ -632,6 +744,15 @@ S.onCmd((cmd) => {
   else if (cmd === 'toggle-bookmarks-bar') S.bookmarksBarToggle();
 });
 
+// Pop-ups are denied in the main process, so report them here. A blocked
+// window that leaves no trace at all is indistinguishable from a page that
+// simply failed to work.
+S.onPopupBlocked(({ url }) => {
+  let host = '';
+  try { host = new URL(url).hostname; } catch (_) {}
+  toast('Pop-up blocked', host ? 'Prism blocked a pop-up from ' + host : 'Prism blocked a pop-up.');
+});
+
 S.onUpdateDownloaded((d) => {
   pendingUpdate = { version: d && d.version, downloaded: true };
   showUpdateButton(pendingUpdate);
@@ -668,7 +789,7 @@ function showUpdateButton(info) {
 }
 $('update-btn').addEventListener('click', async () => {
   if (pendingUpdate && pendingUpdate.downloaded) { S.installUpdate(); return; }
-  toast('Checking for updates...', 'Looking for a newer Prism.');
+  const pending = toast('Checking for updates...', 'Looking for a newer Prism.');
   try {
     const st = await S.checkForUpdates();
     if (st && st.downloaded) {
@@ -687,6 +808,8 @@ $('update-btn').addEventListener('click', async () => {
     }
   } catch (e) {
     toast('Update check failed', (e && e.message) || String(e), true);
+  } finally {
+    pending();
   }
 });
 

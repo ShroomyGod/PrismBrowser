@@ -245,10 +245,58 @@ cleanStale();
 //
 // NOTE: --publish creates a GitHub Release per version. Re-running without
 // bumping "version" in package.json will fail, because the release already exists.
+// GitHub refuses to create a PUBLISHED release whose tag does not exist
+// ("Published releases must have a valid tag"), and electron-builder does not
+// reliably create that tag itself. Prepare it here so the publish step cannot
+// fail on it. Deliberately non-fatal: a local-only build must still work when
+// git is missing or the push is rejected.
+function ensureTag() {
+  let version;
+  try { version = require('../package.json').version; } catch (_) { return; }
+  const tag = 'v' + version;
+
+  // Do NOT assume the remote is called "origin". This repo's is named after the
+  // owner ("shroomygod"), and hardcoding "origin" made the push fail with
+  // "'origin' does not appear to be a git repository".
+  let remote = null;
+  const remotes = spawnSync('git', ['remote'], { encoding: 'utf8' });
+  if (remotes.status === 0) {
+    const names = String(remotes.stdout || '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+    remote = names.includes('origin') ? 'origin' : (names[0] || null);
+  }
+  if (!remote) {
+    console.warn('  no git remote found - cannot push tag ' + tag + ' automatically.');
+    console.warn('  if publishing fails with "must have a valid tag", create it by hand.\n');
+    return;
+  }
+
+  try {
+    const listed = spawnSync('git', ['tag', '--list', tag], { encoding: 'utf8' });
+    if (listed.status !== 0) throw new Error('git tag --list failed');
+    if (!listed.stdout || !listed.stdout.trim()) {
+      if (spawnSync('git', ['tag', tag], { encoding: 'utf8' }).status !== 0) throw new Error('git tag failed');
+      console.log('\n  created tag ' + tag);
+    } else {
+      console.log('\n  tag ' + tag + ' already exists locally');
+    }
+    // Always push, even when the tag was already present. It may have been
+    // created locally and never reached the remote, which is precisely the
+    // state that makes GitHub reject the release with "must have a valid tag".
+    const push = spawnSync('git', ['push', remote, tag], { encoding: 'utf8' });
+    if (push.status !== 0) throw new Error((String(push.stderr || push.stdout || '').trim() || 'git push failed'));
+    console.log('  pushed ' + tag + ' to ' + remote);
+  } catch (e) {
+    console.warn('  could not prepare tag ' + tag + ': ' + e.message);
+    console.warn('  if publishing fails with "must have a valid tag", run:');
+    console.warn('    git push ' + remote + ' ' + tag + '\n');
+  }
+}
+
 const GH_TOKEN = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
 const publishArgs = GH_TOKEN ? ['--publish', 'always'] : [];
 if (GH_TOKEN) {
-  console.log('\n  GITHUB_TOKEN found - artifacts will be published to GitHub Releases.\n');
+  console.log('\n  GITHUB_TOKEN found - artifacts will be published to GitHub Releases.');
+  ensureTag();
 } else {
   console.log('\n  no GITHUB_TOKEN set - building locally, skipping GitHub publish.');
   console.log('  set it in this shell to publish:  $env:GITHUB_TOKEN = "ghp_..."\n');

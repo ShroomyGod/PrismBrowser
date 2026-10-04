@@ -10,6 +10,10 @@ if (location.protocol === 'prism:') {
     relaunch: () => ipcRenderer.invoke('prism:relaunch'),
     versions: () => ipcRenderer.invoke('prism:versions'),
 
+    // VPNGate directory (lists and exports profiles; does not connect)
+    vpnDirectory: (refresh) => ipcRenderer.invoke('prism:vpn:directory', { refresh: !!refresh }),
+    vpnSaveProfile: (host) => ipcRenderer.invoke('prism:vpn:save', { host }),
+
     // prism search
     search: (q, offset, limit) => ipcRenderer.invoke('prism:search:query', { q, offset, limit }),
     searchWeb: (q) => ipcRenderer.invoke('prism:search:web', { q }),
@@ -48,6 +52,9 @@ if (location.protocol === 'prism:') {
     extensionsList: () => ipcRenderer.invoke('prism:extensions:list'),
     extensionsLoadUnpacked: () => ipcRenderer.invoke('prism:extensions:load-unpacked'),
     extensionsInstall: (source, input) => ipcRenderer.invoke('prism:extensions:install', { source, input }),
+    extensionsSearch: (source, query) => ipcRenderer.invoke('prism:extensions:search', { source, query }),
+    extensionsStoreUrl: (source) => ipcRenderer.invoke('prism:extensions:store-url', { source }),
+    extensionsOpenStore: (source) => ipcRenderer.invoke('prism:extensions:open-page', { source }),
     extensionsRemove: (id) => ipcRenderer.invoke('prism:extensions:remove', { id }),
     extensionsReload: (id) => ipcRenderer.invoke('prism:extensions:reload', { id }),
     onExtensionsChanged: (fn) => ipcRenderer.on('prism:extensions-changed', (_e, list) => fn(list)),

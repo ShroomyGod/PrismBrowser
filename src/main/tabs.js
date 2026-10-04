@@ -73,6 +73,21 @@ class TabsManager {
     try { return new URL(tab.url).hostname.toLowerCase(); } catch (_) { return ''; }
   }
 
+  // True when this webContents belongs to a tab in a private window. Used to
+  // keep private windows out of the permanent stores (history, passwords).
+  isPrivateWebContents(wc) {
+    const tab = this._tabByWebContentsId(wc);
+    return !!(tab && tab.private);
+  }
+
+  // How many private windows are still open. The private partition is shared by
+  // every private window, so it may only be wiped when the last one closes.
+  privateWindowCount() {
+    let n = 0;
+    for (const rec of this.windows.values()) if (rec.private) n++;
+    return n;
+  }
+
   // ---------- Windows ----------
   createWindow(opts = {}) {
     const priv = !!opts.private;
@@ -131,7 +146,15 @@ class TabsManager {
     win.on('leave-full-screen', () => this._layoutWindow(wid));
     win.on('closed', () => {
       const rec = this.windows.get(wid);
-      if (rec) { for (const t of rec.tabs) this.tabs.delete(t); this.windows.delete(wid); }
+      if (rec) {
+        // Closing the LAST private window resets the shared in-memory profile, so
+        // the next one starts clean instead of inheriting the last one's cookies.
+        // Checked after this window is still in the map, so privateWindowCount()
+        // counts this one and only fires when it was genuinely the last.
+        if (rec.private && this.privateWindowCount() <= 1) this.resetPrivateSession();
+        for (const t of rec.tabs) this.tabs.delete(t);
+        this.windows.delete(wid);
+      }
     });
     shellView.webContents.on('render-process-gone', (_e, details) => {
       if (this._quitting) return;
@@ -271,7 +294,16 @@ class TabsManager {
       if (this._quitting) return;
       try { wc.loadURL('prism://error?code=crash&desc=' + encodeURIComponent(details.reason)); } catch (_) {}
     });
-    wc.setWindowOpenHandler(({ url, disposition }) => {
+    wc.setWindowOpenHandler(({ url, disposition, features }) => {
+      // Pop-up blocking. A window.open() that asks for an explicit width or
+      // height is a pop-up - that is the shape every ad, interstitial and
+      // "open in new window" overlay uses. Blocking silently is worse than
+      // useless, so the shell is notified and shows a toast naming the URL.
+      const wantsPopup = /(^|[\s,;])(width|height)\s*=/i.test(String(features || ''));
+      if (wantsPopup && settings.all().privacy.popupBlocking !== false) {
+        this._sendToShell(tab.winId, 'prism:popup-blocked', { url });
+        return { action: 'deny' };
+      }
       if (/^https?:/i.test(url)) {
         // external protocols open in OS; http(s) open as tabs
         try {
@@ -346,6 +378,7 @@ class TabsManager {
     const rec = this.windows.get(tab.winId);
     if (!rec) return;
     rec.closed.push({ url: tab.url, title: tab.title });
+    // (private tabs are excluded below - see the note on this line's guard)
     if (rec.closed.length > 20) rec.closed.shift();
     const idx = rec.tabs.indexOf(tabId);
     rec.tabs = rec.tabs.filter((t) => t !== tabId);
@@ -696,10 +729,25 @@ class TabsManager {
   saveSession() {
     const windows = [];
     for (const rec of this.windows.values()) {
+      // Private windows are never written to disk. Restoring one would let a
+      // private URL outlive the window that visited it, which is the opposite
+      // of what the mode promises.
+      if (rec.private) continue;
       const urls = rec.tabs.map((t) => { const tab = this.tabs.get(t); return tab ? tab.url : null; }).filter(Boolean);
-      if (urls.length) windows.push({ private: rec.private, urls });
+      if (urls.length) windows.push({ private: false, urls });
     }
     securestore.save('session', { windows });
+  }
+
+  // Wipe the in-memory private partition. Private windows all share one
+  // partition for the life of the process, so without this the next private
+  // window inherits cookies and localStorage from the previous one instead of
+  // starting genuinely clean.
+  resetPrivateSession() {
+    const ses = this.sessions && this.sessions.privSession;
+    if (!ses) return;
+    try { const p = ses.clearStorageData(); if (p && p.catch) p.catch(() => {}); } catch (_) {}
+    try { const c = ses.clearCache(); if (c && c.catch) c.catch(() => {}); } catch (_) {}
   }
 
   restoreSession() {

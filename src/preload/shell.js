@@ -14,6 +14,11 @@ contextBridge.exposeInMainWorld('prismShell', {
   reportShellExtent: (wid, height) =>
     ipcRenderer.send('prism:shell-extent', { wid, height: Math.round(height) }),
 
+  // Extensions, for the toolbar puzzle-piece dropdown.
+  extensionsList: () => ipcRenderer.invoke('prism:extensions:list'),
+  extensionsOpenPage: (source) => ipcRenderer.invoke('prism:extensions:open-page', { source }),
+  onExtensionsChanged: (fn) => ipcRenderer.on('prism:extensions-changed', () => fn()),
+
   minimize: () => ipcRenderer.send('prism:win:minimize'),
   maximize: () => ipcRenderer.send('prism:win:maximize'),
   close: () => ipcRenderer.send('prism:win:close'),
@@ -55,6 +60,7 @@ contextBridge.exposeInMainWorld('prismShell', {
   onUpdateAvailable: (fn) => ipcRenderer.on('prism:update-available', (_e, d) => fn(d)),
 
   getSettings: () => ipcRenderer.invoke('prism:settings:get'),
+  onPopupBlocked: (fn) => ipcRenderer.on('prism:popup-blocked', (_e, d) => fn(d)),
   setSettings: (patch) => ipcRenderer.invoke('prism:settings:set', patch),
   removeBookmark: (id) => ipcRenderer.invoke('prism:bookmarks:remove', { id }),
   onDownloadThreat: (fn) => ipcRenderer.on('prism:download-threat', (_e, d) => fn(d)),

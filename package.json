@@ -1,15 +1,15 @@
 {
   "name": "prism-browser",
   "productName": "Prism",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Prism: a privacy-focused desktop web browser.",
   "main": "src/main/main.js",
   "scripts": {
-    "start": "cargo run --manifest-path src-tauri/Cargo.toml",
+    "start": "electron .",
     "icons": "node scripts/process-logo.js",
     "release": "node scripts/release.js",
     "test": "node test/search-web.test.js",
-    "build": "cargo build --release --manifest-path src-tauri/Cargo.toml",
+    "build": "electron-builder --win --dir",
     "build:legacy": "electron-builder --win",
     "build:dir:legacy": "electron-builder --win --dir",
     "dist:legacy": "electron-builder --win nsis portable"

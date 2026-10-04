@@ -18,7 +18,7 @@
 
     const lower = v.toLowerCase();
     // Bare internal page names still jump straight to the page.
-    const INTERNAL_PAGES = ['settings', 'history', 'bookmarks', 'downloads', 'passwords', 'extensions', 'privacy', 'newtab'];
+    const INTERNAL_PAGES = ['settings', 'history', 'bookmarks', 'downloads', 'passwords', 'extensions', 'privacy', 'search', 'blocked', 'error', 'vpn', 'newtab'];
     if (INTERNAL_PAGES.includes(lower)) {
       location.href = 'prism://' + lower;
       return;
