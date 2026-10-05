@@ -116,19 +116,24 @@ class Stores {
     return this.bookmarks.ensure().entries.some((b) => b.url === url);
   }
 
-  addBookmark(url, title, favicon, bar = false) {
+  // bar defaults to true: the address-bar star is the only way Prism puts a
+  // bookmark on the bookmarks bar, and the bar's empty state tells the user to
+  // use it. Defaulting to false made every starred bookmark invisible there.
+  addBookmark(url, title, favicon, bar = true) {
     const b = this.bookmarks.ensure();
     const found = b.entries.find((x) => x.url === url);
-    if (found) { found.title = title || found.title; found.bar = bar; }
+    // Never clear an existing bar flag by re-saving the bookmark.
+    if (found) { found.title = title || found.title; found.bar = found.bar || bar; }
     else b.entries.push({ id: crypto.randomUUID(), url, title: title || url, favicon: favicon || null, bar, added: Date.now() });
     this.bookmarks.persist();
+    this._emitBookmarksChanged();
     return url;
   }
 
   toggleBookmark(url, title, favicon) {
     const b = this.bookmarks.ensure();
     const idx = b.entries.findIndex((x) => x.url === url);
-    if (idx >= 0) { b.entries.splice(idx, 1); this.bookmarks.persist(); return false; }
+    if (idx >= 0) { b.entries.splice(idx, 1); this.bookmarks.persist(); this._emitBookmarksChanged(); return false; }
     this.addBookmark(url, title, favicon);
     return true;
   }
@@ -137,11 +142,43 @@ class Stores {
     const b = this.bookmarks.ensure();
     b.entries = b.entries.filter((x) => x.id !== id);
     this.bookmarks.persist();
+    this._emitBookmarksChanged();
   }
 
   listBookmarks() { return this.bookmarks.ensure().entries.slice().reverse(); }
 
   barBookmarks() { return this.bookmarks.ensure().entries.filter((b) => b.bar); }
+
+  // The bookmarks bar lives in the shell, which cannot know a bookmark changed
+  // until something says so. Without this, a page starred or removed on the
+  // Bookmarks page left the bar showing whatever it had last painted.
+  // Same shape as the extensions dropdown's change notification.
+  _emitBookmarksChanged() {
+    let BrowserWindow;
+    try { ({ BrowserWindow } = require('electron')); } catch (_) { return; }
+    if (!BrowserWindow) return;
+    for (const win of BrowserWindow.getAllWindows()) {
+      let wc = null;
+      // The chrome is a child WebContentsView, not win.webContents.
+      try { wc = require('./tabs').shellContentsForWindow(win); } catch (_) { /* tabs not loaded */ }
+      try { (wc || win.webContents).send('prism:bookmarks:changed'); } catch (_) {}
+    }
+  }
+
+  // Move a bookmark on or off the bookmarks bar without touching the bookmark
+  // itself. Returns whether anything changed, so a caller can tell "already in
+  // that state" from "no such bookmark".
+  setBookmarkBar(id, on) {
+    const b = this.bookmarks.ensure();
+    const found = b.entries.find((x) => x.id === id);
+    if (!found) return false;
+    const next = !!on;
+    if (found.bar === next) return false;
+    found.bar = next;
+    this.bookmarks.persist();
+    this._emitBookmarksChanged();
+    return true;
+  }
 
   // ---- Downloads ----
   addDownload(entry) {

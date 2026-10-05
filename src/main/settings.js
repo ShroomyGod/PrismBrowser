@@ -12,7 +12,11 @@ const securestore = require('./securestore');
 const DEFAULTS = {
   general: {
     startup: 'newtab',        // 'newtab' | 'restore'
-    askWhereToSave: true
+    // '' means the OS Downloads folder. Set to an absolute path to override.
+    downloadDir: '',
+    // Prompts with a Save dialog per download. Declared for a long time and
+    // never implemented; downloads.js now honours it.
+    askWhereToSave: false
   },
   search: {
     defaultEngine: 'google',
@@ -29,10 +33,15 @@ const DEFAULTS = {
     }
   },
   appearance: {
+    // 'theme' is derived from the chosen preset (each one is light or dark) and
+    // kept separately because site theming, the window frame and the shell
+    // read it directly.
     theme: 'dark',            // 'dark' | 'light' | 'system'
     bookmarksBar: false,
     siteTheme: 'auto',        // 'auto' follows browser appearance only on sites that advertise scheme support; dark/light/off are optional hints
-    visualTheme: { hue: 215, saturation: 75, gradient: 'aurora', motion: 'shimmer', intensity: 45 },
+    // Id from PrismTheme.PRESETS. Replaces the old free hue/saturation/gradient
+    // generator, which produced mismatched colour combinations.
+    themePreset: 'prism-dark',
     accessibility: {
       textScale: 100, contrast: 'normal', largerTargets: false,
       reducedMotion: 'system', focusIndicators: true
@@ -53,6 +62,7 @@ const DEFAULTS = {
   security: {
     malwareEnabled: true,
     downloadScan: true,
+    defenderScan: true,       // scan finished downloads with Windows Defender
     safeBrowsingKey: ''
   },
   dns: {
@@ -63,6 +73,13 @@ const DEFAULTS = {
   permissions: {},            // origin -> { geolocation: 'allow'|'deny', ... }
   engines: [],
   extensions: { registry: [] },
+  ai: {
+    // Local models only. Nothing here is sent to a server; the toggles control
+    // whether the worker is allowed to start and which task set is offered.
+    enabled: true,
+    visionTasks: ['caption', 'detail', 'ocr', 'detect'],
+    summaryStyle: 'paragraph'
+  },
   advanced: {
     userAgent: '',
     spellcheck: true,
@@ -145,6 +162,19 @@ class Settings {
     }
     if (!this.data.engines.find((e) => e.id === this.all().search.defaultEngine)) {
       this.all().search.defaultEngine = 'google';
+    }
+    // Drop the retired colour generator. Keeping a stale visualTheme around
+    // would let it be re-applied by an older window still open, and it is dead
+    // weight now that themes are curated presets.
+    if (this.data.appearance && this.data.appearance.visualTheme) {
+      delete this.data.appearance.visualTheme;
+    }
+    if (!this.data.appearance.themePreset) {
+      this.data.appearance.themePreset = DEFAULTS.appearance.themePreset;
+      // The preset now decides light or dark, so a stored 'system' would be a
+      // value nothing reads. Only reset it on the upgrade that drops the old
+      // visualTheme, so a deliberate choice is never overwritten later.
+      if (this.data.appearance.theme === 'system') this.data.appearance.theme = 'dark';
     }
     securestore.save('settings', this.data);
     this.writeBootstrap();

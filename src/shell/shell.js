@@ -449,6 +449,10 @@ $('ext-store-chrome').addEventListener('click', () => { extPop.style.display = '
 $('ext-store-edge').addEventListener('click', () => { extPop.style.display = 'none'; S.extensionsOpenPage('edge'); syncExtentNow(); });
 $('ext-manage').addEventListener('click', () => { extPop.style.display = 'none'; S.newTab(WID, 'prism://extensions'); syncExtentNow(); });
 S.onExtensionsChanged(() => refreshExtList());
+// A bookmark can be added or removed from the Bookmarks page as well as from
+// the star, so the bar repaints when the store says so rather than only when the
+// star itself changes something.
+S.onBookmarksChanged(() => renderBookmarksBar());
 // Prime the count/badge at boot rather than waiting for the first popup open,
 // so the toolbar button reflects reality from the first frame.
 refreshExtList();
@@ -705,6 +709,10 @@ const MENU_ACTIONS = {
   'history-clear': () => S.historyClear(),
   'downloads-page': () => S.newTab(WID, 'prism://downloads'),
   'downloads-clear': () => S.downloadsClear(),
+  'downloads-folder': () => S.chooseDownloadFolder().then((result) =>
+    result && result.ok
+      ? toast('Download folder changed', 'New downloads will be saved to ' + result.dir)
+      : null),
   'bookmarks-page': () => S.newTab(WID, 'prism://bookmarks'),
   'bookmarks-bar': () => S.bookmarksBarToggle(),
   'clear-data': () => S.newTab(WID, 'prism://clear'),
@@ -735,6 +743,36 @@ const MENU_ACTIONS = {
     if (!url) return toast('Nothing to translate', 'Open a web page first.');
     return S.newTab(WID, url);
   },
+  // Prism AI. The Vision page captures the active tab itself when it opens, so
+  // this only has to navigate; summarise runs against the active tab and
+  // reports back as a toast like the other page-level actions.
+  // Local AI can be switched off in Settings. Say so before opening a page
+  // whose only purpose is to run a model the user has turned off.
+  'ai-vision': () => {
+    if (state.settings && state.settings.ai && state.settings.ai.enabled === false) {
+      return toast('Local AI is off', 'Turn it back on in Settings to use Prism Vision.');
+    }
+    return S.newTab(WID, 'prism://vision');
+  },
+  'ai-summarise': () => {
+    if (state.settings && state.settings.ai && state.settings.ai.enabled === false) {
+      return toast('Local AI is off', 'Turn it back on in Settings to summarise pages.');
+    }
+    const url = (state.active && state.active.url) || '';
+    if (!/^https?:/i.test(url)) return toast('Nothing to summarise', 'Open a web page first.');
+    const pending = toast('Summarising this page...', 'Prism is reading the page and writing a summary on this device.');
+    // No style argument: the handler falls back to the one in Settings.
+    return S.aiSummarise().then((res) => {
+      if (res && res.error) return toast('Could not summarise', res.error, true);
+      const result = res && res.result;
+      if (!result || !result.text) return toast('Nothing to summarise', 'The model returned an empty summary.');
+      return S.copyText(result.text).then(() => toast(
+        'Summary ready',
+        result.text.length + ' characters, copied to the clipboard.'
+      ));
+    }).catch((err) => toast('Could not summarise', (err && err.message) || 'The local model failed.', true));
+  },
+  'ai-models': () => S.newTab(WID, 'prism://vision#models'),
   'devtools': () => S.devtools(WID),
   'reload': () => S.reload(WID),
   'hard-reload': () => S.reload(WID, true),
@@ -858,7 +896,15 @@ function renderBookmarksBar() {
   setTimeout(() => { syncChromeHeight(); syncExtentNow(); }, 50);
   requestAnimationFrame(() => { syncChromeHeight(); syncExtentNow(); });
   bar.textContent = '';
-  for (const b of (state.tabs._bookmarks || [])) {
+  // Fetch the bar's own list instead of painting the last state snapshot. The
+  // star writes a bookmark and repaints immediately, so a snapshot would not
+  // contain it until some unrelated full update happened to arrive.
+  S.bookmarksBar().then((list) => paintBookmarksBar(bar, list || [])).catch(() => {});
+}
+
+function paintBookmarksBar(bar, bookmarks) {
+  bar.textContent = '';
+  for (const b of bookmarks) {
     const chip = el('div', 'bm');
     chip.title = b.title + '\n' + b.url;
     if (b.favicon) { const img = el('img'); img.src = b.favicon; chip.appendChild(img); }
@@ -866,17 +912,19 @@ function renderBookmarksBar() {
     chip.addEventListener('click', () => { if (state.active) S.navigate(state.active.id, b.url); });
     chip.addEventListener('contextmenu', (ev) => {
       ev.preventDefault();
-      if (confirm('Remove bookmark "' + (b.title || b.url) + '"?')) {
+      // Take it off the bar, not out of Prism. The star puts every bookmark on
+      // the bar, so deleting from here would quietly destroy bookmarks the user
+      // still expects on the Bookmarks page. Deleting stays on that page.
+      if (confirm('Remove "' + (b.title || b.url) + '" from the bookmarks bar?')) {
         (async () => {
-          await S.removeBookmark(b.id);
-          state.tabs._bookmarks = (state.tabs._bookmarks || []).filter((x) => x.id !== b.id);
+          await S.setBookmarkBar(b.id, false);
           renderBookmarksBar();
         })();
       }
     });
     bar.appendChild(chip);
   }
-  if (!(state.tabs._bookmarks || []).length) {
+  if (!bookmarks.length) {
     const hint = el('span');
     hint.style.cssText = 'color:var(--text-dim);font-size:11px;padding:0 6px;';
     hint.textContent = 'Use the star in the address bar to bookmark sites. Toggle this bar with Ctrl+Shift+B.';
@@ -949,28 +997,80 @@ function toast(title, body, danger, actionLabel, action) {
 
 // ---------- theme ----------
 function applyTheme() {
-  let theme = state.theme || 'dark';
-  if (theme === 'system') theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  const appearance = Object.assign({}, state.appearance || {});
   if (window.PrismTheme) {
-    const appearance = Object.assign({}, state.appearance || {}, { theme, visualTheme: state.appearance && state.appearance.visualTheme });
     window.PrismTheme.apply(document.documentElement, appearance);
-  } else document.documentElement.dataset.theme = theme;
+  } else document.documentElement.dataset.theme = state.theme || 'dark';
+  // Keep the shell's own mirror in step; internal pages do the same from the
+  // preset, and the site-theme path in the main process reads it.
+  if (window.PrismTheme) state.theme = document.documentElement.dataset.theme;
   document.documentElement.dataset.motionPreference =
     (state.appearance && state.appearance.accessibility && state.appearance.accessibility.reducedMotion) || 'system';
 }
 
 // ---------- quick theme controls ----------
+// The popup shows a scrollable list of curated presets grouped by category
+// rather than the old hue/gradient/motion inputs: every row is a complete,
+// designed palette rather than a generated combination.
+const SHELL_CATEGORY_LIMIT = 4;
+function shellPresetCategories() {
+  if (!window.PrismTheme) return [];
+  return window.PrismTheme.CATEGORIES.map((category) => ({ category, items: window.PrismTheme.presetsIn(category.id) }));
+}
+function renderThemePresets() {
+  const host = $('theme-presets');
+  if (!host) return;
+  const active = (state.appearance && state.appearance.themePreset) || '';
+  host.textContent = '';
+  let shown = 0;
+  let shownThemes = 0;
+  for (const { category, items } of shellPresetCategories()) {
+    if (!items.length || shown >= SHELL_CATEGORY_LIMIT) continue;
+    shown++;
+    shownThemes += items.length;
+    const heading = document.createElement('div');
+    heading.className = 'theme-preset-category';
+    heading.textContent = category.name;
+    const list = document.createElement('div');
+    list.className = 'theme-preset-grid';
+    for (const item of items) {
+      const resolved = window.PrismTheme.resolve(item.id);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'theme-preset';
+      button.dataset.preset = item.id;
+      button.setAttribute('aria-pressed', String(item.id === active));
+      button.title = item.name;
+      const chip = document.createElement('span');
+      chip.className = 'theme-preset-chip';
+      chip.setAttribute('aria-hidden', 'true');
+      chip.style.setProperty('--chip-color', resolved.vars['--chrome-color']);
+      chip.style.setProperty('--chip-image', resolved.vars['--chrome-bg']);
+      chip.style.setProperty('--chip-page', resolved.vars['--bg']);
+      button.appendChild(chip);
+      const label = document.createElement('span');
+      label.className = 'theme-preset-name';
+      label.textContent = item.name;
+      button.appendChild(label);
+      button.addEventListener('click', () => applyThemePatch({ themePreset: item.id, theme: resolved.dark ? 'dark' : 'light' }));
+      list.appendChild(button);
+    }
+    host.append(heading, list);
+  }
+  if (!shown) return;
+  // Say what the popup is holding back, so the Settings link reads as "there is
+  // more" rather than as the whole catalog.
+  const more = document.createElement('div');
+  more.className = 'theme-preset-category';
+  const hidden = window.PrismTheme.PRESETS.length - shownThemes;
+  more.textContent = hidden > 0 ? `${hidden} more in Settings` : '';
+  host.appendChild(more);
+}
 function syncThemeControls() {
-  const appearance = state.appearance || {};
-  const visual = appearance.visualTheme || { hue: 215, gradient: 'aurora', motion: 'none' };
-  if ($('shell-hue')) $('shell-hue').value = Number.isFinite(Number(visual.hue)) ? visual.hue : 215;
-  if ($('shell-gradient')) $('shell-gradient').value = visual.gradient || 'aurora';
-  if ($('shell-motion')) $('shell-motion').value = visual.motion || 'none';
+  renderThemePresets();
 }
 function applyThemePatch(patch) {
-  const appearance = Object.assign({}, state.appearance || {});
-  if (patch.visualTheme) appearance.visualTheme = Object.assign({}, appearance.visualTheme || {}, patch.visualTheme);
-  Object.assign(appearance, patch);
+  const appearance = Object.assign({}, state.appearance || {}, patch);
   state.appearance = appearance;
   state.theme = appearance.theme || state.theme;
   applyTheme();
@@ -991,6 +1091,14 @@ function applyThemePatch(patch) {
         state.theme = latest.appearance.theme || state.theme;
         applyTheme();
         syncThemeControls();
+        // A change made elsewhere arrived while this write was in flight. Ours
+        // was issued first, so it looked newer than theirs; replay theirs now
+        // that the write has settled, otherwise the shell and Settings disagree.
+        const external = queuedExternalAppearance;
+        queuedExternalAppearance = null;
+        if (external && JSON.stringify(external) !== JSON.stringify(latest.appearance)) {
+          applyThemePatch(external);
+        }
       }
     } catch (error) {
       if (revision === themeSaveRevision) themeSavePending = false;
@@ -1002,6 +1110,7 @@ function applyThemePatch(patch) {
 let themeSaveTimer = null;
 let themeSaveRevision = 0;
 let themeSavePending = false;
+let queuedExternalAppearance = null;
 const themePop = $('theme-pop');
 $('theme-btn').addEventListener('click', () => {
   const show = themePop.style.display === 'none';
@@ -1011,14 +1120,13 @@ $('theme-btn').addEventListener('click', () => {
   if (show) syncThemeControls();
   syncExtentNow();
 });
-themePop.querySelectorAll('[data-base-theme]').forEach((button) => button.addEventListener('click', () => applyThemePatch({ theme: button.dataset.baseTheme })));
-$('shell-hue').addEventListener('input', () => applyThemePatch({ visualTheme: { hue: Number($('shell-hue').value) } }));
-$('shell-gradient').addEventListener('change', () => applyThemePatch({ visualTheme: { gradient: $('shell-gradient').value } }));
-$('shell-motion').addEventListener('change', () => applyThemePatch({ visualTheme: { motion: $('shell-motion').value } }));
 $('theme-random').addEventListener('click', () => {
-  const visual = (state.appearance && state.appearance.visualTheme) || {};
-  applyThemePatch({ visualTheme: window.PrismTheme.random(visual) });
+  const current = (state.appearance && state.appearance.themePreset) || '';
+  const id = window.PrismTheme.randomPresetId(current);
+  const resolved = window.PrismTheme.resolve(id);
+  applyThemePatch({ themePreset: id, theme: resolved.dark ? 'dark' : 'light' });
 });
+$('theme-all').addEventListener('click', () => { themePop.style.display = 'none'; S.newTab(WID, 'prism://settings#appearance'); syncExtentNow(); });
 $('theme-accessibility').addEventListener('click', () => { themePop.style.display = 'none'; S.newTab(WID, 'prism://settings#accessibility'); syncExtentNow(); });
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (state.theme === 'system') applyTheme(); });
 
@@ -1176,8 +1284,10 @@ S.onSettingsChanged((s) => {
   const prevBar = state.bookmarksBar;
   state.settings = s;
   state.adblockEnabled = s.privacy.adblock.enabled;
-  // Do not let a delayed snapshot overwrite a value still being coalesced.
-  if (!themeSavePending) {
+  // Do not let a delayed snapshot overwrite a value still being coalesced; the
+  // snapshot is queued instead and replayed once the shell's write settles.
+  if (themeSavePending) queuedExternalAppearance = s.appearance;
+  else {
     state.theme = s.appearance.theme;
     state.appearance = s.appearance;
   }
@@ -1189,6 +1299,10 @@ S.onSettingsChanged((s) => {
   updateShieldBadge();
   if (prevBar !== state.bookmarksBar) renderBookmarksBar();
   if ($('shield-pop').style.display !== 'none') refreshShieldPop();
+});
+
+S.onToast(({ title, body, danger }) => {
+  if (title) toast(title, body || '', !!danger);
 });
 
 S.onDownloadThreat(({ filename, threat }) => {

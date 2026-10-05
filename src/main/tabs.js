@@ -19,6 +19,7 @@ const adblock = require('./adblock');
 const security = require('./security');
 const crawler = require('./crawler');
 const securestore = require('./securestore');
+const storeInstall = require('./store-install');
 
 const DEFAULT_CHROME_HEIGHT = 84; // fallback until the shell reports its real height
 const PAGE_PRELOAD = path.join(__dirname, '..', 'preload', 'page.js');
@@ -258,6 +259,23 @@ class TabsManager {
       this._maybeIngest(tab);
     });
     wc.on('dom-ready', () => this._applyCompatibleSiteTheme(tab));
+
+    // Store pages: swap the dead "Add to Chrome" button for a working
+    // "Install To Prism", and silence the "Switch to Chrome?" dialog.
+    // Both stores are SPAs, so this also runs on in-page navigation.
+    const reinjectStore = () => { storeInstall.inject(wc); };
+    wc.on('did-finish-load', reinjectStore);
+    wc.on('did-navigate-in-page', (_e, url, isMainFrame) => {
+      if (isMainFrame) reinjectStore();
+    });
+    wc.on('dialog', (event, details) => {
+      if (!storeInstall.shouldSuppressDialog(wc.getURL())) return;
+      // Only the switch-browser nag, matched by content. Suppressing EVERY
+      // dialog on a store page would break any legitimate confirm() the page
+      // uses, and preventDefault() leaves the page's promise pending forever
+      // rather than resolving it to false.
+      if (storeInstall.isBrowserNag(details)) event.preventDefault();
+    });
     wc.on('did-navigate-in-page', (_e, url, isMainFrame) => {
       if (!isMainFrame) return;
       tab.url = url;

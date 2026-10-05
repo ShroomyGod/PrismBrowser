@@ -32,6 +32,24 @@
   --danger: #d9534f;
   --ok: #6f9f6f;
   --chrome-gradient: none;
+  /* Frame tokens. The theme engine writes these on documentElement; the
+     literals below are only the pre-hydration default so the shell does not
+     paint an unstyled frame for a frame. */
+  --chrome-bg: none;
+  --chrome-color: #141414;
+  --chrome-active: #1d1d1d;
+  --chrome-line: #2b2b2b;
+  --chrome-ink: #ececec;
+  --chrome-accent: #7c9cbf;
+  /* Frame tokens. The theme engine writes these on documentElement; the
+     literals below are only the pre-hydration default so the shell does not
+     paint an unstyled frame for a frame. */
+  --chrome-bg: none;
+  --chrome-color: #141414;
+  --chrome-active: #1d1d1d;
+  --chrome-line: #2b2b2b;
+  --chrome-ink: #ececec;
+  --chrome-accent: #7c9cbf;
   --motion-duration: 8s;
   --tab-w: 220px;
   --chrome-h: 84px;
@@ -44,6 +62,15 @@
  * body.private wins over html[data-theme=...] for the same property. */
 body.private {
   --bg: #14101c;
+  /* A private window must not leak the normal theme's frame colours, so the
+     frame tokens are overridden alongside the surfaces. */
+  --chrome-color: #1b1630;
+  --chrome-active: #2a2148;
+  --chrome-line: #3a2f63;
+  --chrome-ink: #efeaff;
+  --chrome-accent: #b794f6;
+  --chrome-bg: none;
+  --chrome-gradient: none;
   --bg2: #1b1630;
   --bg3: #251d42;
   --bg4: #2f2554;
@@ -57,9 +84,9 @@ body.private {
 }
 body.private #chrome-top,
 body.private #toolbar,
-body.private #tabstrip { background-color: var(--bg2); background-image: var(--chrome-gradient); }
+body.private #tabstrip { background-color: var(--bg2); background-image: var(--chrome-bg, var(--chrome-gradient, none)); }
 body.private .tab { color: var(--text-dim); }
-body.private .tab.active { background-color: var(--bg3); background-image: linear-gradient(135deg, var(--gradient-a, transparent), var(--gradient-b, transparent)); color: var(--text); }
+body.private .tab.active { background-color: var(--chrome-active, var(--bg3)); background-image: linear-gradient(135deg, var(--gradient-a, transparent), var(--gradient-b, transparent)); color: var(--chrome-ink, var(--text)); }
 body.private .tab.active::before {
   content: ''; position: absolute; left: 0; right: 0; top: 0; height: 2px;
   background: var(--accent); border-radius: 2px 2px 0 0;
@@ -106,7 +133,7 @@ html[data-motion="wave"] #chrome-top::after {
 @keyframes prism-gradient-shimmer { to { background-position: -200% 0; } }
 
 /* ---------- top chrome: everything the page must sit below ---------- */
-#chrome-top { flex: none; position: relative; z-index: 30; background-color: var(--bg2); background-image: var(--chrome-gradient); background-size: 220% 220%; }
+#chrome-top { flex: none; position: relative; z-index: 30; background-color: var(--chrome-color, var(--bg2)); background-image: var(--chrome-bg, var(--chrome-gradient, none)); background-size: 220% 220%; color: var(--chrome-ink, var(--text)); }
 html[data-motion="drift"] #chrome-top { animation: prism-gradient-drift var(--motion-duration) ease-in-out infinite alternate; }
 html[data-motion="breathe"] #chrome-top { animation: prism-gradient-breathe var(--motion-duration) ease-in-out infinite; }
 html[data-motion="pulse"] #chrome-top { animation: prism-gradient-pulse calc(var(--motion-duration) * .75) ease-in-out infinite; }
@@ -118,7 +145,7 @@ html[data-motion="wave"] #chrome-top { background-size: 250% 100%; animation: pr
 /* ---------- tab strip ---------- */
 #tabstrip {
   height: 40px; display: flex; align-items: flex-end; gap: 2px;
-  padding: 0 0 0 8px; background-color: transparent; background-image: var(--chrome-gradient);
+  padding: 0 0 0 8px; background-color: transparent; background-image: var(--chrome-bg, var(--chrome-gradient, none));
   -webkit-app-region: drag; flex: none;
 }
 #tabs { display: flex; align-items: flex-end; height: 40px; max-width: calc(100% - 140px); overflow: hidden; }
@@ -139,7 +166,7 @@ html[data-motion="wave"] #chrome-top { background-size: 250% 100%; animation: pr
   padding: 0 6px 0 9px; border-radius: 8px 8px 0 0; cursor: default;
   color: var(--text-dim); position: relative;
 }
-.tab.active { background-color: var(--bg3); background-image: linear-gradient(135deg, var(--gradient-a, transparent), var(--gradient-b, transparent)); color: var(--text); }
+.tab.active { background-color: var(--chrome-active, var(--bg3)); background-image: linear-gradient(135deg, var(--gradient-a, transparent), var(--gradient-b, transparent)); color: var(--chrome-ink, var(--text)); }
 .tab:hover:not(.active) { background: var(--bg4); }
 .tab .fav { width: 16px; height: 16px; flex: none; border-radius: 3px; }
 .tab .fav-fallback { width: 16px; height: 16px; flex: none; opacity: .85; }
@@ -162,7 +189,7 @@ html[data-motion="wave"] #chrome-top { background-size: 250% 100%; animation: pr
 /* ---------- toolbar ---------- */
 #toolbar {
   height: 44px; flex: none; display: flex; align-items: center; gap: 3px;
-  padding: 0 8px; background-color: transparent; background-image: var(--chrome-gradient); box-shadow: 0 1px 0 var(--line);
+  padding: 0 8px; background-color: transparent; background-image: var(--chrome-bg, var(--chrome-gradient, none)); box-shadow: 0 1px 0 var(--chrome-line, var(--line)); color: var(--chrome-ink, var(--text));
 }
 .ibtn {
   width: 30px; height: 30px; border-radius: 7px; display: flex;
@@ -298,13 +325,29 @@ html[data-reduce-motion="reduce"] *:after { animation-duration: .001ms !importan
 #ext-pop {
   top: var(--chrome-h); right: 8px; width: 268px; padding: 11px 12px;
 }
-#theme-pop { top: var(--chrome-h); right: 92px; width: 260px; padding: 12px; }
-#theme-pop .theme-mode { display: flex; gap: 5px; margin: 7px 0 10px; }
-#theme-pop .theme-mode button { flex: 1; border: 1px solid var(--line); border-radius: 7px; padding: 6px 3px; font-size: 11px; background: var(--bg3); }
-#theme-pop .theme-mode button:hover { border-color: var(--accent); }
-#theme-pop .theme-label { display: block; color: var(--text-dim); font-size: 11px; margin: 7px 0 4px; }
-#theme-pop input[type="range"], #theme-pop select { width: 100%; accent-color: var(--accent); }
-#theme-pop select { color: var(--text); background: var(--bg3); border: 1px solid var(--line); border-radius: 7px; padding: 5px; }
+/* Theme popup: curated presets, grouped by category. Deliberately wider and
+   scrollable — it is a gallery, not three dropdowns. */
+#theme-pop { top: var(--chrome-h); right: 92px; width: 328px; padding: 12px; }
+#theme-pop .pop-link.inline { margin-left: auto; font-size: 12px; }
+#theme-pop .pop-row { display: flex; align-items: center; gap: 10px; }
+.theme-presets { max-height: 336px; overflow-y: auto; margin: 4px -3px 8px; padding: 0 3px; }
+.theme-preset-category {
+  color: var(--text-faint); font-size: 10px; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; margin: 9px 0 5px;
+}
+.theme-preset-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+.theme-preset {
+  display: flex; flex-direction: column; gap: 4px; align-items: stretch; padding: 3px;
+  border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--text-dim);
+}
+.theme-preset:hover { background: var(--bg3); color: var(--text); }
+.theme-preset[aria-pressed="true"] { border-color: var(--accent); color: var(--text); background: var(--accent-soft); }
+.theme-preset-chip {
+  display: block; height: 30px; border-radius: 5px; border: 1px solid var(--line);
+  background-color: var(--chip-color); background-image: var(--chip-image, none);
+  box-shadow: inset 0 -8px 12px -10px var(--chip-page);
+}
+.theme-preset-name { font-size: 10.5px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #ext-btn { position: relative; }
 #ext-list { max-height: 260px; overflow-y: auto; margin-bottom: 4px; }
 .ext-row {

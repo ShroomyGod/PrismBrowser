@@ -3,6 +3,7 @@
 // extensions, privacy stats, and data clearing.
 const { ipcMain, app, shell, session, clipboard, dialog, BrowserWindow } = require('electron');
 const fs = require('fs');
+const path = require('path');
 const settings = require('./settings');
 const stores = require('./stores');
 const adblock = require('./adblock');
@@ -14,6 +15,8 @@ const prismSearchWeb = require('./prism-search-web');
 const crawler = require('./crawler');
 const { index } = require('./index-store');
 const menus = require('./menus');
+const downloads = require('./downloads');
+const ai = require('./ai');
 
 function registerIpc(tabs) {
   // The shell lives in its own WebContentsView, so resolve the owning
@@ -123,16 +126,52 @@ function registerIpc(tabs) {
   // ---------- bookmarks page ----------
   ipcMain.handle('prism:bookmarks:list', () => stores.listBookmarks());
   ipcMain.handle('prism:bookmarks:remove', (_e, { id }) => { stores.removeBookmark(id); return true; });
+  // The bar asks for its own list rather than reusing whatever the last state
+  // push carried, so starring a page or adding one on the Bookmarks page shows
+  // up immediately instead of at the next full update.
+  ipcMain.handle('prism:bookmarks:bar', () => stores.barBookmarks());
+  ipcMain.handle('prism:bookmarks:set-bar', (_e, { id, on }) => stores.setBookmarkBar(id, on));
 
   // ---------- downloads ----------
   ipcMain.handle('prism:downloads:list', () => stores.listDownloads());
-  ipcMain.handle('prism:downloads:open', (_e, { path, reveal }) => {
-    if (!path) return false;
-    if (reveal) shell.showItemInFolder(path);
-    else shell.openPath(path);
-    return true;
-  });
+  // Kept one handler for both spellings: page preload uses (path, reveal),
+  // shell bridge uses (path). Both go through downloads.js now, which refuses
+  // any path that is not one of our own recorded downloads.
+  ipcMain.handle('prism:downloads:open', (_e, { path, reveal }) =>
+    reveal ? downloads.reveal(path) : downloads.open(path));
   ipcMain.handle('prism:downloads:clear', () => { stores.clearDownloads(); return true; });
+
+  // ---------- download file actions ----------
+  // Each handler goes through downloads.js, which refuses any path that is not
+  // one of our own recorded downloads, so a tampered history entry cannot be
+  // used to open or delete an arbitrary file.
+  ipcMain.handle('prism:downloads:run', (_e, { path }) => downloads.run(path));
+  ipcMain.handle('prism:downloads:reveal', (_e, { path }) => downloads.reveal(path));
+  ipcMain.handle('prism:downloads:delete-file', (_e, { path }) => {
+    const result = downloads.removeFile(path);
+    // The file is gone, so stop pretending the row can still be opened.
+    if (result.ok) {
+      const gone = path.resolve(result.path);
+      for (const d of stores.listDownloads()) {
+        if (d.path && path.resolve(d.path) === gone) {
+          stores.updateDownload(d.id, { path: '', state: 'deleted' });
+        }
+      }
+    }
+    return result;
+  });
+  ipcMain.handle('prism:downloads:antivirus', () => ({
+    ...downloads.antivirusStatus(),
+    dir: downloads.downloadsDir(),
+    prompt: !!(settings.all().general || {}).askWhereToSave
+  }));
+  ipcMain.handle('prism:downloads:choose-folder', async (e) => {
+    const dir = await downloads.chooseFolder(winOf(e));
+    if (!dir) return { ok: false, dir: downloads.downloadsDir() };
+    settings.set({ general: { downloadDir: dir } });
+    downloads.sync();
+    return { ok: true, dir };
+  });
 
   // ---------- passwords ----------
   // A private window must not be able to read or write the permanent vault:
@@ -194,6 +233,10 @@ function registerIpc(tabs) {
       const res = await extensions.pickAndLoadUnpacked(win);
       return res;
     } catch (err) { return { error: String(err.message || err) }; }
+  });
+  ipcMain.on('prism:store-install-failed', (e, { message }) => {
+    const wc = tabs.shellContentsForWindow(winOf(e));
+    if (wc) wc.send('prism:toast', { title: 'Extension install failed', body: message || 'Unknown error.', danger: true });
   });
   ipcMain.handle('prism:extensions:install', async (_e, { source, input }) => {
     try {
@@ -389,6 +432,101 @@ try {
     tabs.saveSession();
     app.quit();
   });
+
+  // ---------- local AI (Prism Vision, page summaries) ----------
+  // Inference happens in a worker thread (src/ai/worker.js); these handlers
+  // only capture input and hand it over, so no model work touches this process.
+
+  ipcMain.handle('prism:ai:status', () => ai.status());
+
+  // Which tasks the Vision page offers is a user choice, so the filtering happens
+  // here: the page must not be able to offer a task the user has switched off.
+  ipcMain.handle('prism:ai:tasks', () => {
+    const allowed = settings.get('ai.visionTasks');
+    const list = Array.isArray(allowed) && allowed.length
+      ? ai.tasks.VISION_TASKS.filter((t) => allowed.includes(t.id))
+      : ai.tasks.VISION_TASKS;
+    return {
+      vision: list.length ? list : ai.tasks.VISION_TASKS,
+      summaryStyles: ai.tasks.SUMMARY_STYLE_IDS,
+      enabled: settings.get('ai.enabled') !== false,
+      summaryStyle: ai.tasks.summaryStyle(settings.get('ai.summaryStyle'))
+    };
+  });
+
+  // Progress (model download, then inference) is streamed to whichever window
+  // asked, so the Vision page can show what is happening instead of hanging.
+  ipcMain.handle('prism:ai:watch', (e) => {
+    const sender = e.sender;
+    const off = ai.onProgress((payload) => {
+      if (!sender.isDestroyed()) sender.send('prism:ai:progress', payload);
+    });
+    e.sender.once('destroyed', off);
+    return true;
+  });
+
+  // Screenshots the active tab so Prism Vision has an image to read. capturePage
+  // returns the visible viewport, which is what the user is looking at.
+  ipcMain.handle('prism:ai:capture', async (e) => {
+    const wc = tabs.activeWebContents(activeWid(e));
+    if (!wc) return { error: 'There is no active tab to look at.' };
+    if (!/^https?:/i.test(wc.getURL())) return { error: 'Open a web page first.' };
+    try {
+      const image = await wc.capturePage();
+      const png = image.toPNG();
+      if (!png || !png.length) return { error: 'That page could not be captured.' };
+      return { image: 'data:image/png;base64,' + png.toString('base64') };
+    } catch (err) {
+      return { error: (err && err.message) || 'That page could not be captured.' };
+    }
+  });
+
+  // Local AI can be switched off in Settings; refuse clearly rather than quietly
+  // running a model the user believes is off.
+  const aiOff = () => (settings.get('ai.enabled') === false
+    ? { error: 'Local AI is turned off in Settings.' }
+    : null);
+
+  ipcMain.handle('prism:ai:vision', (_e, { image, task, input }) => {
+    const off = aiOff();
+    if (off) return off;
+    return ai.analyseImage(image, { task, input })
+      .then((result) => ({ result }))
+      .catch((err) => ({ error: (err && err.message) || 'Prism Vision could not read that image.' }));
+  });
+
+  ipcMain.handle('prism:ai:summarise', async (e, { style }) => {
+    const off = aiOff();
+    if (off) return off;
+    const wc = tabs.activeWebContents(activeWid(e));
+    if (!wc) return { error: 'There is no active tab to summarise.' };
+    let text = '';
+    try {
+      text = await wc.executeJavaScript("document.body ? document.body.innerText : ''");
+    } catch (_) { text = ''; }
+    if (!text || !text.trim()) return { error: 'This page has no text to summarise.' };
+    try {
+      // A menu that does not pass a style still honours the one in Settings.
+      const result = await ai.summarise(text, {
+        style: style || settings.get('ai.summaryStyle') || 'paragraph'
+      });
+      return { result };
+    } catch (err) {
+      return { error: (err && err.message) || 'This page could not be summarised.' };
+    }
+  });
+
+  // Lets an internal page summarise text it already has (for example a
+  // selection) rather than only the active tab.
+  ipcMain.handle('prism:ai:summarise-text', (_e, { text, style }) => {
+    const off = aiOff();
+    if (off) return off;
+    return ai.summarise(text, { style: style || settings.get('ai.summaryStyle') || 'paragraph' })
+      .then((result) => ({ result }))
+      .catch((err) => ({ error: (err && err.message) || 'That could not be summarised.' }));
+  });
+
+  ipcMain.handle('prism:ai:clear-cache', () => ai.clearCache());
 }
 
 const SITE_DATA_STORAGES = ['cookies', 'localstorage', 'indexdb', 'shadercache', 'websql', 'serviceworkers', 'cachestorage'];

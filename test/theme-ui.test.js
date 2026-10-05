@@ -1,12 +1,25 @@
 'use strict';
 
 // End-to-end regression test for theme controls in the shell and Settings page.
+//
+// The gallery changed shape on purpose: 124 curated presets in 12 categories
+// replaced the old 69,120-combination generator, so the swatch count is now
+// PrismTheme.PRESETS.length rather than a fixed 24 and the "1 / 2880" paging
+// indicator is gone entirely (the whole catalog is on one page). These
+// assertions verify the curated behaviour rather than the old generated one.
 const { app } = require('electron');
 const path = require('path');
 const M = (name) => require(path.join(__dirname, '..', 'src', 'main', name));
 const fail = (message) => { console.error(message); try { app.exit(1); } catch (_) {} };
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const timeout = setTimeout(() => fail('THEME_UI_TIMEOUT'), 45000);
+
+// The shell coalesces theme writes behind a 120ms debounce, so a fixed sleep
+// races it. Background timer throttling is disabled for the same reason: the
+// chrome is a WebContentsView that can be reported as occluded in a headless
+// run, which stalls that debounce long past any fixed wait.
+app.commandLine.appendSwitch('disable-background-timer-throttling');
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
 
 const protocols = M('protocols');
 protocols.privilegedSchemes();
@@ -32,7 +45,7 @@ app.whenReady().then(async () => {
   try {
     settings.set({ appearance: {
       theme: 'dark',
-      visualTheme: { hue: 142, saturation: 75, gradient: 'forest', motion: 'drift', intensity: 45 },
+      themePreset: 'forest',
       accessibility: { textScale: 115, contrast: 'high', largerTargets: true, reducedMotion: 'reduce', focusIndicators: true }
     } });
     const wid = tabs.createWindow({ urls: ['prism://settings'] });
@@ -46,36 +59,44 @@ app.whenReady().then(async () => {
     await wait(900);
     const initial = await page.executeJavaScript(`({
       api: typeof window.PrismTheme,
-      count: document.querySelectorAll('#theme-grid .theme-swatch').length,
-      page: document.querySelector('#theme-page')?.textContent,
+      count: document.querySelectorAll('#theme-grid .theme-card').length,
+      presets: window.PrismTheme.PRESETS.length,
+      categories: document.querySelectorAll('#theme-categories .theme-category').length,
+      sections: document.querySelectorAll('#theme-grid .theme-section').length,
+      selected: document.querySelectorAll('#theme-grid .theme-card[aria-pressed="true"]').length,
+      selectedId: document.querySelector('#theme-grid .theme-card[aria-pressed="true"]')?.dataset.preset,
+      retired: !!document.getElementById('theme-page') || !!document.getElementById('hue'),
+      countLabel: document.getElementById('theme-count')?.textContent,
       theme: document.documentElement.dataset.theme,
-      hue: getComputedStyle(document.documentElement).getPropertyValue('--theme-hue').trim(),
+      preset: document.documentElement.dataset.themePreset,
+      accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(),
       contrast: document.documentElement.dataset.contrast,
       targets: document.documentElement.dataset.largeTargets,
       motion: document.documentElement.dataset.reduceMotion,
       scaledFont: getComputedStyle(document.body).fontSize
     })`);
-    if (initial.api !== 'object' || initial.count !== 24 || initial.page !== '1 / 2880' ||
-        initial.theme !== 'dark' || initial.hue !== '142' || initial.contrast !== 'high' ||
-        initial.targets !== 'true' || initial.motion !== 'reduce' || initial.scaledFont !== '16.1px') {
+    if (initial.api !== 'object' || initial.count !== initial.presets || initial.count < 100 ||
+        initial.categories !== 12 || initial.sections !== 12 || initial.selected !== 1 ||
+        initial.selectedId !== 'forest' || initial.retired || initial.countLabel !== initial.presets + ' themes' ||
+        initial.theme !== 'dark' || initial.preset !== 'forest' || initial.accent !== '#7bd88f' ||
+        initial.contrast !== 'high' || initial.targets !== 'true' || initial.motion !== 'reduce' ||
+        initial.scaledFont !== '16.1px') {
       throw new Error('Initial settings appearance/accessibility did not apply: ' + JSON.stringify(initial));
     }
 
     // Exercise the same clicks and input/change events that the user-facing UI
     // uses, rather than only checking that controls exist in the DOM.
-    await page.executeJavaScript(`document.querySelector('#theme-grid .theme-swatch:nth-child(6)').click(); true`);
-    await page.executeJavaScript(`document.getElementById('theme-next').click(); true`);
-    await wait(150);
-    const nextPage = await page.executeJavaScript(`document.getElementById('theme-page').textContent`);
-    await page.executeJavaScript(`document.getElementById('theme-prev').click(); true`);
-    await wait(150);
-    const firstPage = await page.executeJavaScript(`document.getElementById('theme-page').textContent`);
-    if (nextPage !== '2 / 2880' || firstPage !== '1 / 2880') throw new Error('Theme gallery pagination failed');
+    await page.executeJavaScript(`document.querySelector('#theme-grid .theme-card[data-preset="nord"]').click(); true`);
+    await page.executeJavaScript(`document.getElementById('theme-categories').children[5].click(); true`);
     await wait(350);
+    const afterClick = await page.executeJavaScript(`({
+      preset: document.documentElement.dataset.themePreset,
+      selected: document.querySelector('#theme-grid .theme-card[aria-pressed="true"]')?.dataset.preset
+    })`);
+    if (afterClick.preset !== 'nord' || afterClick.selected !== 'nord') {
+      throw new Error('Selecting a preset did not apply it: ' + JSON.stringify({ preset: afterClick.preset, selected: afterClick.selected }));
+    }
     await page.executeJavaScript(`
-      const hue = document.getElementById('hue');
-      hue.value = '205'; hue.dispatchEvent(new Event('input', { bubbles: true }));
-      hue.dispatchEvent(new Event('change', { bubbles: true }));
       const contrast = document.getElementById('contrast');
       contrast.value = 'normal'; contrast.dispatchEvent(new Event('change', { bubbles: true }));
       const motion = document.getElementById('reduced-motion');
@@ -87,28 +108,45 @@ app.whenReady().then(async () => {
     // Exercise shell popup controls, including the real preference write back
     // into the open Settings page and the stored profile.
     await shellWc.executeJavaScript(`document.getElementById('theme-btn').click()`);
-    await shellWc.executeJavaScript(`
-      const gradient = document.getElementById('shell-gradient');
-      gradient.value = 'ocean'; gradient.dispatchEvent(new Event('change', { bubbles: true }));
-      document.querySelector('[data-base-theme="light"]').click();
-      true;
-    `);
-    await wait(700);
+    const shellList = await shellWc.executeJavaScript(`({
+      rows: document.querySelectorAll('#theme-presets .theme-preset').length,
+      categories: document.querySelectorAll('#theme-presets .theme-preset-category').length,
+      retired: !!document.getElementById('shell-hue') || !!document.querySelector('[data-base-theme]'),
+      pressed: document.querySelector('#theme-presets .theme-preset[aria-pressed="true"]')?.dataset.preset
+    })`);
+    if (shellList.retired || shellList.rows < 20 || shellList.pressed !== 'nord') {
+      throw new Error('Shell theme popup does not list presets: ' + JSON.stringify(shellList));
+    }
+    await shellWc.executeJavaScript(`document.querySelector('#theme-presets .theme-preset[data-preset="paper"]').click(); true`);
+    // Poll until the debounced write has actually propagated to the open
+    // Settings page. This waits for the real condition rather than for a
+    // guessed duration, and still asserts the same end state below.
+    let propagated = false;
+    for (let attempt = 0; attempt < 40 && !propagated; attempt++) {
+      await wait(150);
+      const seen = await Promise.all([
+        shellWc.executeJavaScript(`document.documentElement.dataset.themePreset`),
+        page.executeJavaScript(`document.documentElement.dataset.themePreset`)
+      ]);
+      propagated = seen[0] === 'paper' && seen[1] === 'paper';
+    }
+    if (!propagated) throw new Error('Choosing a theme in the shell never reached the Settings page');
 
     const shell = await shellWc.executeJavaScript(`({
       api: typeof window.PrismTheme,
-      hue: getComputedStyle(document.documentElement).getPropertyValue('--theme-hue').trim(),
       accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(),
+      frame: getComputedStyle(document.documentElement).getPropertyValue('--chrome-color').trim(),
       theme: document.documentElement.dataset.theme,
+      preset: document.documentElement.dataset.themePreset,
       motion: document.documentElement.dataset.motion,
-      gradient: document.documentElement.dataset.gradient,
       privateVpnMenu: !!document.querySelector('[data-act="vpn"]')
     })`);
     const pageState = await page.executeJavaScript(`({
-      count: document.querySelectorAll('#theme-grid .theme-swatch').length,
+      count: document.querySelectorAll('#theme-grid .theme-card').length,
       theme: document.documentElement.dataset.theme,
-      hue: getComputedStyle(document.documentElement).getPropertyValue('--theme-hue').trim(),
-      gradient: document.documentElement.dataset.gradient,
+      preset: document.documentElement.dataset.themePreset,
+      frame: getComputedStyle(document.documentElement).getPropertyValue('--chrome-color').trim(),
+      accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(),
       contrast: document.documentElement.dataset.contrast,
       motion: document.documentElement.dataset.reduceMotion,
       focus: document.documentElement.dataset.focusVisible
@@ -116,12 +154,12 @@ app.whenReady().then(async () => {
     const stored = settings.all().appearance;
     console.log('SHELL_THEME=' + JSON.stringify(shell));
     console.log('SETTINGS_THEME=' + JSON.stringify(pageState));
-    const ok = shell.api === 'object' && shell.theme === 'light' && shell.gradient === 'ocean' &&
-      shell.hue === '205' && shell.motion === 'shimmer' && !shell.privateVpnMenu &&
-      pageState.count === 24 && pageState.theme === 'light' && pageState.hue === '205' &&
-      pageState.gradient === 'ocean' && pageState.contrast === 'normal' &&
-      pageState.motion === 'allow' && pageState.focus === 'strong' &&
-      stored.theme === 'light' && stored.visualTheme.gradient === 'ocean' && stored.visualTheme.hue === 205 &&
+    const ok = shell.api === 'object' && shell.theme === 'light' && shell.preset === 'paper' &&
+      shell.motion === 'none' && !shell.privateVpnMenu &&
+      shell.frame === pageState.frame && shell.accent === pageState.accent &&
+      pageState.count === 124 && pageState.theme === 'light' && pageState.preset === 'paper' &&
+      pageState.contrast === 'normal' && pageState.motion === 'allow' && pageState.focus === 'strong' &&
+      stored.theme === 'light' && stored.themePreset === 'paper' &&
       stored.accessibility.reducedMotion === 'no-preference';
     console.log(ok ? 'THEME_UI_OK' : 'THEME_UI_FAIL');
 

@@ -60,8 +60,12 @@ contextBridge.exposeInMainWorld('prismShell', {
   historyClear: () => ipcRenderer.invoke('prism:history:clear'),
   downloadsList: () => ipcRenderer.invoke('prism:downloads:list'),
   downloadsClear: () => ipcRenderer.invoke('prism:downloads:clear'),
+  chooseDownloadFolder: () => ipcRenderer.invoke('prism:downloads:choose-folder'),
   openDownload: (path) => ipcRenderer.invoke('prism:downloads:open', { path }),
   bookmarksList: () => ipcRenderer.invoke('prism:bookmarks:list'),
+  bookmarksBar: () => ipcRenderer.invoke('prism:bookmarks:bar'),
+  onBookmarksChanged: (fn) => ipcRenderer.on('prism:bookmarks:changed', () => fn()),
+  setBookmarkBar: (id, on) => ipcRenderer.invoke('prism:bookmarks:set-bar', { id, on }),
   lockVault: () => ipcRenderer.invoke('prism:vault:lock'),
   tabGroups: (op, groupId, name) => ipcRenderer.invoke('prism:tab:groups', { op, groupId, name }),
   toggleFullscreen: () => ipcRenderer.send('prism:win:fullscreen'),
@@ -81,11 +85,20 @@ contextBridge.exposeInMainWorld('prismShell', {
   onUpdateDownloaded: (fn) => ipcRenderer.on('prism:update-downloaded', (_e, d) => fn(d)),
   onUpdateAvailable: (fn) => ipcRenderer.on('prism:update-available', (_e, d) => fn(d)),
 
+  // local AI
+  aiStatus: () => ipcRenderer.invoke('prism:ai:status'),
+  aiCapture: () => ipcRenderer.invoke('prism:ai:capture'),
+  aiVision: (image, task, input) => ipcRenderer.invoke('prism:ai:vision', { image, task, input }),
+  aiSummarise: (style) => ipcRenderer.invoke('prism:ai:summarise', { style }),
+  aiClearCache: () => ipcRenderer.invoke('prism:ai:clear-cache'),
+  onAiProgress: (fn) => ipcRenderer.on('prism:ai:progress', (_e, d) => fn(d)),
+
   getSettings: () => ipcRenderer.invoke('prism:settings:get'),
   onPopupBlocked: (fn) => ipcRenderer.on('prism:popup-blocked', (_e, d) => fn(d)),
   setSettings: (patch) => ipcRenderer.invoke('prism:settings:set', patch),
   removeBookmark: (id) => ipcRenderer.invoke('prism:bookmarks:remove', { id }),
   onDownloadThreat: (fn) => ipcRenderer.on('prism:download-threat', (_e, d) => fn(d)),
+  onToast: (fn) => ipcRenderer.on('prism:toast', (_e, d) => fn(d)),
   onDownloadsChanged: (fn) => ipcRenderer.on('prism:downloads-changed', () => fn()),
 
   // events from main

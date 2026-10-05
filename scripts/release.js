@@ -13,13 +13,26 @@
 //   4. run electron-builder
 //   5. verify the expected installer + blockmap landed
 //
-// Usage: npm run release
+// Usage:
+//   npm run release                     build and publish, named from the notes
+//   npm run release -- --name Spectrum  override the chosen name for this build
+//
+// A release is published as "Prism <version> — <name>". The name is derived
+// from the features in scripts/release-notes.md, which is also what the
+// suggestions are read from, so the name always describes the actual release.
 
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { PNG } = require('pngjs');
-const { createReleaseNotes, githubApiRequest, replaceExistingRelease } = require('./release-helper');
+const {
+  createReleaseNotes,
+  releaseTitle,
+  resolveReleaseName,
+  updateReleaseName,
+  githubApiRequest,
+  replaceExistingRelease
+} = require('./release-helper');
 
 const ROOT = path.join(__dirname, '..');
 const ASSETS = path.join(ROOT, 'assets');
@@ -60,6 +73,33 @@ function tagName() {
   return prefix + VERSION;
 }
 
+// `--name` overrides the automatic name for one specific build. Everything else
+// is derived, so a plain `npm run release` never asks anything and produces the
+// same name for the same notes.
+function parseArgs(argv) {
+  const args = { name: '' };
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '--name' || arg === '--release-name') args.name = argv[++i] || '';
+    else if (arg.startsWith('--name=')) args.name = arg.slice('--name='.length);
+    else if (arg.startsWith('--release-name=')) args.name = arg.slice('--release-name='.length);
+    else if (arg === '--help' || arg === '-h') args.help = true;
+  }
+  return args;
+}
+
+function notesTemplate() {
+  const file = path.join(__dirname, 'release-notes.md');
+  return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+}
+
+const ARGS = parseArgs(process.argv.slice(2));
+const NOTES_TEMPLATE = notesTemplate();
+
+function resolveNameForBuild() {
+  return resolveReleaseName({ requested: ARGS.name, notesText: NOTES_TEMPLATE });
+}
+
 function resolveGitHubConfig() {
   const publish = pkg.build && pkg.build.publish;
   if (!publish || publish.provider !== 'github' || !publish.owner || !publish.repo) {
@@ -68,11 +108,12 @@ function resolveGitHubConfig() {
   return { owner: publish.owner, repo: publish.repo };
 }
 
-function requestGitHub(apiPath, method, token) {
+function requestGitHub(apiPath, method, token, body) {
   return githubApiRequest({
     hostname: 'api.github.com',
     path: apiPath,
     method,
+    body,
     headers: {
       Accept: 'application/vnd.github+json',
       Authorization: 'Bearer ' + token,
@@ -97,18 +138,43 @@ async function replaceSameVersionRelease() {
   else log('  no existing GitHub release for ' + tag + '; a new release will be created.');
 }
 
+// Name the release that electron-builder has just created.
+//
+// This runs after the upload on purpose: the assets and the tag are already
+// live by this point, so failing to set a cosmetic title must not be reported as
+// a failed release - the installer is out and updating normally either way.
+async function renamePublishedRelease(name) {
+  const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+  if (!token) return;
+  try {
+    const { owner, repo } = resolveGitHubConfig();
+    const basePath = '/repos/' + encodeURIComponent(owner) + '/' + encodeURIComponent(repo);
+    await updateReleaseName({
+      basePath,
+      tag: tagName(),
+      name,
+      request: (apiPath, method, body) => requestGitHub(apiPath, method, token, body)
+    });
+    log('  named the release "' + name + '"');
+  } catch (error) {
+    console.warn('  WARNING: could not name the release: ' + error.message);
+    console.warn('  The release itself is published and updating normally; only its title is missing.');
+    console.warn('  Rename it on the releases page, or re-run the release with a token.');
+  }
+}
+
 // electron-builder resolves the GitHub release body from releaseInfo, or from
 // a release-notes.md in the project directory. Generate that file from the
 // maintained template so the published description is comprehensive rather than
 // a bare version string. The generated copy is a build artifact (gitignored).
-function writeReleaseNotes() {
+function writeReleaseNotes(name) {
   const templateFile = path.join(__dirname, 'release-notes.md');
   if (!fs.existsSync(templateFile)) {
     console.warn('  no release-notes.md template found - the release description will be the default version only.');
     return;
   }
   const file = path.join(ROOT, 'release-notes.md');
-  fs.writeFileSync(file, createReleaseNotes(fs.readFileSync(templateFile, 'utf8'), VERSION), 'utf8');
+  fs.writeFileSync(file, createReleaseNotes(fs.readFileSync(templateFile, 'utf8'), VERSION, name), 'utf8');
   log('  wrote comprehensive release notes to ' + path.relative(ROOT, file));
 }
 
@@ -288,6 +354,26 @@ function verifyArtifacts() {
   }
 }
 
+// --help has to be handled before anything with a side effect runs. The icon
+// pass rewrites assets/ and cleanStale() deletes the previous build's
+// installer, blockmap and latest.yml, so a help request that reached them would
+// destroy a build the user did not ask to rebuild. This block deliberately runs
+// with no `ask`, so printing help never prompts for a name.
+if (ARGS.help) {
+  const preview = resolveReleaseName({ requested: ARGS.name, notesText: NOTES_TEMPLATE });
+  console.log('Prism release script\n');
+  console.log('  npm run release                     build, then publish as "' + releaseTitle(VERSION, preview.name) + '"');
+  console.log('  npm run release -- --name Spectrum  publish with an explicit name');
+  console.log('  npm run release -- --help           show this message\n');
+  console.log('  The name is chosen automatically from the "New in this release"');
+  console.log('  section of scripts/release-notes.md, and becomes the GitHub release');
+  console.log('  title and the notes heading. Override it for one build with --name.');
+  console.log('  The tag stays v' + VERSION + ': the updater reads the version from');
+  console.log('  latest.yml, falling back to the tag, and never from the title.\n');
+  console.log('  Set GITHUB_TOKEN to publish. Without it the build is produced but nothing is uploaded.\n');
+  process.exit(0);
+}
+
 log('Prism ' + VERSION + ' release build');
 log('='.repeat(46));
 
@@ -351,15 +437,88 @@ function ensureTag() {
   }
 }
 
+// Prism Vision and the summariser ship their weights inside the installer so an
+// installed Prism works offline on first use. Build without them and the feature
+// still "works" — by quietly downloading hundreds of MB the first time anyone clicks it —
+// so check before the build starts rather than discovering it after.
+function requireModels() {
+  const marker = path.join(ROOT, 'resources', 'models', 'prism-models.json');
+  const tasks = require('../src/ai/tasks');
+  if (!fs.existsSync(marker)) {
+    fail('The AI models are not staged for this build.\n' +
+         '  Prism bundles SmolVLM-256M and SmolLM-135M so they work offline.\n' +
+         '  Run:  npm run models');
+  }
+  let staged;
+  try {
+    staged = JSON.parse(fs.readFileSync(marker, 'utf8'));
+  } catch (err) {
+    fail('resources/models/prism-models.json is unreadable: ' + err.message + '\n' +
+         '  Run:  npm run models -- --force');
+  }
+  const wanted = [tasks.VISION_MODELS, tasks.TEXT_MODELS];
+  for (const spec of wanted) {
+    if (!staged.models.some((m) => m.id === spec.id && m.dtype === spec.dtype)) {
+      fail('The staged models do not match src/ai/tasks.js (' + spec.id + ' ' + spec.dtype + ').\n' +
+           '  Someone changed a model id or dtype without re-staging.\n' +
+           '  Run:  npm run models -- --force');
+    }
+  }
+  log('  models: ' + staged.models.map((m) => m.label).join(' + ') +
+      ' (' + Math.round(staged.bytes / 1048576) + ' MB in the installer)');
+}
+
+// ...and check the other end of it: the staged weights actually reached
+// win-unpacked. A missing extraResources entry is otherwise invisible until a
+// user's first click stalls on a download.
+function verifyPackagedModels() {
+  const dir = path.join(ROOT, 'win-unpacked', 'resources', 'models');
+  if (!fs.existsSync(dir)) {
+    log('  (skipped: win-unpacked/resources/models not found)');
+    return;
+  }
+  const tasks = require('../src/ai/tasks');
+  const missing = [];
+  for (const spec of [tasks.VISION_MODELS, tasks.TEXT_MODELS]) {
+    // "<resources>/models/<owner>/<repo>" — the layout transformers.js looks in.
+    const modelDir = path.join(dir, ...spec.id.split('/'));
+    const onnx = path.join(modelDir, 'onnx');
+    let sessions = [];
+    try { sessions = fs.readdirSync(onnx); } catch (_) { sessions = []; }
+    if (sessions.length === 0) missing.push(spec.id + ' (no onnx/ sessions)');
+    else if (!fs.existsSync(path.join(modelDir, 'config.json'))) missing.push(spec.id + ' (config.json)');
+  }
+  if (missing.length) {
+    fail('These models are missing from the built app:\n  ' + missing.join('\n  ') + '\n' +
+         '  Check build.extraResources in package.json.');
+  }
+  log('  models: verified in win-unpacked/resources/models');
+}
+
 const GH_TOKEN = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+
+// Resolve the release name before anything is built. It ends up in the GitHub
+// release title and the notes heading, so a wrong choice should surface in the
+// first second, not after a five-minute installer build.
+const RELEASE = resolveNameForBuild();
+const RELEASE_TITLE = releaseTitle(VERSION, RELEASE.name);
+log('');
+log('  ' + RELEASE_TITLE);
+log('  name: ' + RELEASE.name + ' (' + RELEASE.source + ')');
+const runnersUp = RELEASE.suggestions.slice(1).map((entry) => entry.name);
+if (runnersUp.length) log('  also considered: ' + runnersUp.join(', ') + '   (override with --name)');
+log('  tag:  ' + tagName() + '  (the name is not in the tag - the updater reads latest.yml, not the tag)');
 
 // Publishing replaces any existing release for this version, so the build has to
 // succeed before anything on GitHub is touched. Keep that order: build, verify,
 // then replace the release and upload.
+requireModels();
+
 run('npx', ['electron-builder', '--win', 'nsis', 'portable']);
 
 verifyArtifacts();
 verifyPackagedPages();
+verifyPackagedModels();
 log('\nDone. Prism ' + VERSION + ' installer and blockmap are in the project root.');
 
 if (!GH_TOKEN) {
@@ -376,7 +535,7 @@ if (!ensureTag()) {
 }
 (async () => {
   try {
-    writeReleaseNotes();
+    writeReleaseNotes(RELEASE.name);
     // electron-builder refuses to upload to a release published more than two
     // hours ago, so the same-version release is replaced first and recreated
     // from the freshly verified artifacts.
@@ -397,7 +556,10 @@ if (!ensureTag()) {
            '\nThe GitHub release for this version was already replaced, so fix the build and re-run.');
     }
     run('npx', ['electron-builder', 'publish', '--policy', 'always', '--version', VERSION, '--files', ...uploadFiles]);
-    log('\nPublished Prism ' + VERSION + ' to GitHub Releases.');
+    // electron-builder titles the release with the bare version and offers no
+    // supported way to change that, so the name is applied here, after upload.
+    await renamePublishedRelease(RELEASE.name);
+    log('\nPublished "' + RELEASE_TITLE + '" to GitHub Releases.');
   } catch (error) {
     fail('GitHub publish failed: ' + error.message);
   }

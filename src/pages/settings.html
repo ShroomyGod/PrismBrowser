@@ -21,45 +21,19 @@
     <h1>Settings</h1>
   </div>
 
-  <h3>Appearance</h3>
+  <h3 id="appearance">Appearance</h3>
   <div class="card">
-    <div class="setting-line">
-      <div class="info"><b>Theme</b><div class="muted">Applies to the browser chrome and internal pages.</div></div>
-      <select id="theme">
-        <option value="dark">Dark</option>
-        <option value="light">Light</option>
-        <option value="system">Follow system</option>
-      </select>
-    </div>
     <div id="line-bookmarksbar"></div>
+    <!-- Chrome-style gallery: category rail plus large labelled thumbnails,
+         the whole catalog on one scrollable page. Paging through 2,880 pages
+         of generated swatches is gone along with the generator. -->
     <div class="setting-line">
-      <div class="info"><b>Color recipe</b><div class="muted">Generate a palette from over 69,000 hue, gradient, and motion combinations.</div></div>
-      <div class="row" style="flex-wrap:wrap;justify-content:flex-end">
-        <select id="gradient">
-          <option value="aurora">Aurora gradient</option><option value="sunset">Sunset gradient</option>
-          <option value="ocean">Ocean gradient</option><option value="candy">Candy gradient</option>
-          <option value="ember">Ember gradient</option><option value="forest">Forest gradient</option>
-          <option value="mono">Monochrome gradient</option><option value="none">Solid color</option>
-        </select>
-        <select id="motion">
-          <option value="none">Still</option><option value="shimmer">Shimmer</option>
-          <option value="drift">Drift</option><option value="breathe">Breathe</option>
-          <option value="pulse">Pulse</option><option value="wave">Wave</option>
-        </select>
-        <button id="random-theme" type="button">Surprise me</button>
-      </div>
+      <div class="info"><b>Theme</b><div class="muted">Applies to the browser chrome and internal pages. Every theme is a complete palette, not a generated gradient.</div></div>
+      <div class="row"><span id="theme-count" class="badge" style="position:static">124 themes</span><button id="random-theme" type="button">Surprise me</button></div>
     </div>
-    <div class="setting-line">
-      <div class="info"><label for="hue"><b>Hue</b></label><div class="muted">Choose the core color for the browser UI.</div></div>
-      <input id="hue" type="range" min="0" max="359" value="215" aria-label="Theme hue" style="max-width:260px">
-      <span id="theme-count" class="badge" style="position:static">69,120 palettes</span>
-    </div>
-    <div class="card theme-gallery-card">
-      <div class="row between" style="flex-wrap:wrap">
-        <div><b>Generated themes</b><div class="muted" id="gallery-status">Browse a page at a time. Select a swatch to apply it.</div></div>
-        <div class="row"><button id="theme-prev" type="button" aria-label="Previous theme page">Previous</button><span id="theme-page" class="muted" aria-live="polite"></span><button id="theme-next" type="button" aria-label="Next theme page">Next</button></div>
-      </div>
-      <div id="theme-grid" class="theme-grid" role="group" aria-label="Generated color themes"></div>
+    <div class="theme-gallery">
+      <nav id="theme-categories" class="theme-categories" aria-label="Theme categories"></nav>
+      <div id="theme-grid" class="theme-grid" role="group" aria-label="Themes"></div>
     </div>
     <div id="line-site-theme" class="setting-line">
       <div class="info"><b>Site theme</b><div class="muted">Never recolors page content. Auto only follows the browser on sites that opt in with a color-scheme declaration.</div></div>
@@ -98,10 +72,27 @@
     <div id="line-dnt"></div>
   </div>
 
+  <h3 id="downloads">Downloads</h3>
+  <div class="card">
+    <div class="setting-line">
+      <div class="info">
+        <b>Download folder</b>
+        <div class="muted" id="download-dir-note">Loading…</div>
+      </div>
+      <div class="row">
+        <button id="choose-dir" class="small">Choose folder</button>
+        <button id="reset-dir" class="small">Use default</button>
+      </div>
+    </div>
+    <div id="line-ask-where"></div>
+  </div>
+
   <h3>Security</h3>
   <div class="card">
     <div id="line-malware"></div>
     <div id="line-scan"></div>
+    <div id="line-defender"></div>
+    <div class="muted" id="av-note" style="margin-top:8px"></div>
   </div>
 
   <h3>DNS</h3>
@@ -146,6 +137,26 @@
     </div>
   </div>
 
+  <h3 id="ai">Local AI</h3>
+  <div class="card" id="aiCard">
+    <div class="setting-line">
+      <div class="info"><b>Prism Vision and summaries</b><div class="muted">Runs SmolVLM-256M for image understanding and SmolLM-135M for text on this device. The models are part of Prism; nothing you analyse leaves the machine.</div></div>
+      <div id="aiEnabled"></div>
+    </div>
+    <div class="setting-line">
+      <div class="info"><b>Summary style</b><div class="muted">What the menu's Summarise action produces.</div></div>
+      <select id="aiSummaryStyle"></select>
+    </div>
+    <div class="setting-line">
+      <div class="info"><b>Prism Vision tasks</b><div class="muted">Choose what the Vision page offers. Anything switched off is not shown.</div></div>
+      <div id="aiTasks" style="display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end"></div>
+    </div>
+    <div class="setting-line">
+      <div class="info"><b>Models</b><div class="muted" id="aiModels">Checking...</div></div>
+      <div><button id="aiClear" class="small">Delete extra downloads</button></div>
+    </div>
+  </div>
+
   <h3>About</h3>
   <div class="card" id="about"><div class="muted">Loading...</div></div>
 </div>
@@ -162,33 +173,42 @@
     if (latest) s = latest;
   }
 
-  // ---- appearance + generated gallery ----
-  const visual = Object.assign({ hue: 215, saturation: 75, gradient: 'aurora', motion: 'shimmer', intensity: 45 }, s.appearance.visualTheme || {});
+  // ---- appearance + theme gallery ----
   const accessibility = Object.assign({ textScale: 100, contrast: 'normal', largerTargets: false, reducedMotion: 'system', focusIndicators: true }, s.appearance.accessibility || {});
-  let themePage = 0;
-  const THEMES_PER_PAGE = 24;
-  const totalPages = Math.ceil(PrismTheme.THEME_COUNT / THEMES_PER_PAGE);
-  const descriptiveGradient = (g) => ({ aurora: 'Aurora', sunset: 'Sunset', ocean: 'Ocean', candy: 'Candy', ember: 'Ember', forest: 'Forest', mono: 'Mono', none: 'Solid' }[g] || g);
+  let activePreset = PrismTheme.preset(s.appearance.themePreset).id;
   function applyPageAppearance() {
-    let resolvedTheme = s.appearance.theme || 'dark';
-    if (resolvedTheme === 'system') resolvedTheme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    PrismTheme.apply(document.documentElement, Object.assign({}, s.appearance, { theme: resolvedTheme, visualTheme: visual, accessibility }));
+    // Every preset declares whether it is light or dark, so there is no separate
+    // base-theme control that could drift out of sync with the selection - the
+    // theme *is* the preset.
+    const resolved = PrismTheme.resolve(s.appearance.themePreset);
+    PrismTheme.apply(document.documentElement, Object.assign({}, s.appearance, { theme: resolved.dark ? 'dark' : 'light', accessibility }));
   }
-  const systemTheme = matchMedia('(prefers-color-scheme: dark)');
-  systemTheme.addEventListener && systemTheme.addEventListener('change', () => {
-    if (s.appearance.theme === 'system') applyPageAppearance();
-  });
   let appearanceSaveTimer = null;
   let appearanceSaveQueue = Promise.resolve();
   let appearanceRevision = 0;
+  // A settings broadcast that lands while one of our own writes is in flight.
+  // Dropping it (the old behaviour) is what made the shell and this page
+  // disagree: our write was issued first, so it looked "newer" than the change
+  // the user had just made somewhere else.
+  let queuedExternalAppearance = null;
   function persistAppearance() {
     const revision = ++appearanceRevision;
     const snapshot = Object.assign({}, s.appearance);
     appearanceSaveQueue = appearanceSaveQueue.catch(() => {}).then(async () => {
       const latest = await window.prism.setSettings({ appearance: snapshot });
-      if (revision === appearanceRevision && latest) {
-        s = latest;
-        appearanceDirty = false;
+      if (revision !== appearanceRevision || !latest) return;
+      s = latest;
+      appearanceDirty = false;
+      const external = queuedExternalAppearance;
+      queuedExternalAppearance = null;
+      if (external) {
+        adoptAppearance(external);
+        // Our write may have landed after theirs, so put their value back.
+        // Writing it again cannot loop: the resulting broadcast matches what we
+        // now hold, so the handler adopts it without scheduling another write.
+        if (JSON.stringify(external) !== JSON.stringify(latest.appearance)) {
+          updateAppearance(Object.assign({}, external), true);
+        }
       }
     });
     appearanceSaveQueue.catch((error) => console.error('Could not save appearance', error));
@@ -197,7 +217,7 @@
   function updateAppearance(patch, debounce = false) {
     appearanceDirty = true;
     s.appearance = Object.assign({}, s.appearance, patch);
-    if (patch.visualTheme) Object.assign(visual, patch.visualTheme);
+    if (patch.themePreset) activePreset = PrismTheme.preset(patch.themePreset).id;
     if (patch.accessibility) Object.assign(accessibility, patch.accessibility);
     applyPageAppearance();
     clearTimeout(appearanceSaveTimer);
@@ -209,72 +229,126 @@
     appearanceSaveTimer = null;
     persistAppearance();
   }
+  // Take an appearance wholesale from another surface (the shell popup, another
+  // tab) and mirror it into every control on this page.
+  function adoptAppearance(appearance) {
+    s.appearance = Object.assign({}, s.appearance, appearance);
+    activePreset = PrismTheme.preset(appearance.themePreset).id;
+    Object.assign(accessibility, { textScale: 100, contrast: 'normal', largerTargets: false, reducedMotion: 'system', focusIndicators: true }, appearance.accessibility || {});
+    $('siteTheme').value = s.appearance.siteTheme || 'auto';
+    $('text-scale').value = accessibility.textScale;
+    $('text-scale-value').value = accessibility.textScale + '%';
+    $('contrast').value = accessibility.contrast;
+    $('reduced-motion').value = accessibility.reducedMotion;
+    const bar = document.querySelector('#line-bookmarksbar input');
+    if (bar) bar.checked = !!s.appearance.bookmarksBar;
+    const larger = document.querySelector('#line-larger-targets input');
+    if (larger) larger.checked = !!accessibility.largerTargets;
+    const keyboard = document.querySelector('#line-focus-indicators input');
+    if (keyboard) keyboard.checked = !!accessibility.focusIndicators;
+    applyPageAppearance();
+    renderThemes();
+  }
+  // A card previews the theme it applies: the frame colour and texture sit
+  // behind a mock tab strip and page, so the gallery shows what the browser
+  // will actually look like rather than an abstract gradient chip.
+  function themeCard(item) {
+    const resolved = PrismTheme.resolve(item.id);
+    const vars = resolved.vars;
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'theme-card';
+    card.dataset.preset = item.id;
+    card.setAttribute('aria-pressed', String(item.id === activePreset));
+    card.setAttribute('aria-label', item.name + ' theme, ' + (resolved.dark ? 'dark' : 'light'));
+    const thumb = document.createElement('span');
+    thumb.className = 'theme-thumb';
+    thumb.setAttribute('aria-hidden', 'true');
+    thumb.style.setProperty('--thumb-color', vars['--chrome-color']);
+    thumb.style.setProperty('--thumb-image', vars['--chrome-bg']);
+    thumb.style.setProperty('--thumb-active', vars['--chrome-active']);
+    thumb.style.setProperty('--thumb-ink', vars['--chrome-ink']);
+    thumb.style.setProperty('--thumb-accent', vars['--chrome-accent']);
+    thumb.style.setProperty('--thumb-page', vars['--bg']);
+    thumb.style.setProperty('--thumb-page-line', vars['--line']);
+    const tab = document.createElement('span');
+    tab.className = 'theme-thumb-tab';
+    const toolbar = document.createElement('span');
+    toolbar.className = 'theme-thumb-bar';
+    const page = document.createElement('span');
+    page.className = 'theme-thumb-page';
+    thumb.append(tab, toolbar, page);
+    const name = document.createElement('span');
+    name.className = 'theme-card-name';
+    name.textContent = item.name;
+    const check = document.createElement('span');
+    check.className = 'theme-card-check';
+    check.setAttribute('aria-hidden', 'true');
+    check.textContent = item.id === activePreset ? '\u2713' : '';
+    card.append(thumb, name, check);
+    card.addEventListener('click', () => selectPreset(item.id));
+    return card;
+  }
+
+  function selectPreset(id) {
+    const resolved = PrismTheme.resolve(id);
+    activePreset = resolved.id;
+    // `theme` is written alongside the preset because site theming, the window
+    // frame and the shell read it directly.
+    updateAppearance({ themePreset: resolved.id, theme: resolved.dark ? 'dark' : 'light' });
+    renderThemes();
+  }
+
   function renderThemes() {
     const grid = $('theme-grid');
+    const rail = $('theme-categories');
     grid.textContent = '';
-    const start = themePage * THEMES_PER_PAGE;
-    for (let slot = 0; slot < THEMES_PER_PAGE && start + slot < PrismTheme.THEME_COUNT; slot++) {
-      // A coprime stride samples the full generated space on every page, rather
-      // than showing 24 near-identical hues together. Every recipe remains
-      // reachable once as the user pages through the catalog.
-      const i = ((start + slot) * 2881) % PrismTheme.THEME_COUNT;
-      const recipe = PrismTheme.fromIndex(i);
-      const palette = PrismTheme.resolve(recipe, $('theme').value === 'light' ? 'light' : 'dark');
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'theme-swatch';
-      button.setAttribute('aria-pressed', String(recipe.hue === visual.hue && recipe.saturation === visual.saturation && recipe.gradient === visual.gradient && recipe.motion === visual.motion));
-      button.setAttribute('aria-label', `Theme ${i + 1}: ${descriptiveGradient(recipe.gradient)}, hue ${recipe.hue}, ${recipe.motion} motion`);
-      button.title = `Apply theme ${i + 1}`;
-      const colorChannel = (value, fallback) => {
-        if (!value || value === 'transparent') return fallback;
-        return String(value).replace(/\s*\/\s*[\d.]+\)$/, ')');
-      };
-      button.style.setProperty('--swatch-a', colorChannel(palette['--gradient-a'], palette['--accent']));
-      button.style.setProperty('--swatch-b', colorChannel(palette['--gradient-b'], palette['--accent']));
-      button.style.setProperty('--swatch-c', colorChannel(palette['--gradient-c'], palette['--accent']));
-      button.style.setProperty('--swatch-ink', palette['--gradient-text']);
-      const name = document.createElement('span');
-      name.className = 'swatch-name';
-      name.textContent = `${descriptiveGradient(recipe.gradient)} · ${recipe.hue}`;
-      const check = document.createElement('span');
-      check.className = 'swatch-check';
-      check.setAttribute('aria-hidden', 'true');
-      check.textContent = button.getAttribute('aria-pressed') === 'true' ? '✓' : '';
-      button.append(name, check);
-      button.addEventListener('click', () => {
-        Object.assign(visual, recipe);
-        visual.intensity = recipe.intensity || visual.intensity;
-        $('hue').value = visual.hue;
-        $('gradient').value = visual.gradient;
-        $('motion').value = visual.motion;
-        updateAppearance({ visualTheme: Object.assign({}, visual) });
-        renderThemes();
+    rail.textContent = '';
+    for (const category of PrismTheme.CATEGORIES) {
+      const items = PrismTheme.presetsIn(category.id);
+      if (!items.length) continue;
+      const jump = document.createElement('button');
+      jump.type = 'button';
+      jump.className = 'theme-category';
+      jump.dataset.category = category.id;
+      jump.textContent = category.name;
+      jump.addEventListener('click', () => {
+        const section = document.getElementById('theme-cat-' + category.id);
+        if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
-      grid.appendChild(button);
+      rail.appendChild(jump);
+      const section = document.createElement('section');
+      section.className = 'theme-section';
+      section.id = 'theme-cat-' + category.id;
+      section.setAttribute('aria-label', category.name);
+      const heading = document.createElement('h4');
+      heading.className = 'theme-section-title';
+      heading.textContent = category.name;
+      const list = document.createElement('div');
+      list.className = 'theme-section-grid';
+      for (const item of items) list.appendChild(themeCard(item));
+      section.append(heading, list);
+      grid.appendChild(section);
     }
-    $('theme-page').textContent = `${themePage + 1} / ${totalPages}`;
-    $('theme-prev').disabled = themePage === 0;
-    $('theme-next').disabled = themePage >= totalPages - 1;
+    $('theme-count').textContent = PrismTheme.PRESETS.length + ' themes';
+    // Highlight the category the reader is actually looking at.
+    if (window.IntersectionObserver) {
+      const observer = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const id = entry.target.id.replace('theme-cat-', '');
+          for (const button of rail.querySelectorAll('.theme-category')) {
+            button.setAttribute('aria-current', String(button.dataset.category === id));
+          }
+        }
+      }, { rootMargin: '-80px 0px -70% 0px' });
+      for (const section of grid.querySelectorAll('.theme-section')) observer.observe(section);
+    }
   }
-  $('theme').value = s.appearance.theme;
-  $('theme').addEventListener('change', () => { updateAppearance({ theme: $('theme').value }); renderThemes(); });
   $('siteTheme').value = s.appearance.siteTheme || 'auto';
   $('siteTheme').addEventListener('change', () => updateAppearance({ siteTheme: $('siteTheme').value }));
-  $('gradient').value = visual.gradient;
-  $('motion').value = visual.motion;
-  $('hue').value = visual.hue;
-  $('gradient').addEventListener('change', () => { visual.gradient = $('gradient').value; updateAppearance({ visualTheme: Object.assign({}, visual) }); renderThemes(); });
-  $('motion').addEventListener('change', () => { visual.motion = $('motion').value; updateAppearance({ visualTheme: Object.assign({}, visual) }); renderThemes(); });
-  $('hue').addEventListener('input', () => { visual.hue = Number($('hue').value); updateAppearance({ visualTheme: Object.assign({}, visual) }, true); renderThemes(); });
-  $('hue').addEventListener('change', flushAppearance);
-  $('random-theme').addEventListener('click', () => {
-    Object.assign(visual, PrismTheme.random(visual));
-    $('hue').value = visual.hue; $('gradient').value = visual.gradient; $('motion').value = visual.motion;
-    updateAppearance({ visualTheme: Object.assign({}, visual) }); renderThemes();
-  });
-  $('theme-prev').addEventListener('click', () => { themePage = Math.max(0, themePage - 1); renderThemes(); });
-  $('theme-next').addEventListener('click', () => { themePage = Math.min(totalPages - 1, themePage + 1); renderThemes(); });
+  // "Surprise me" jumps to another curated theme rather than inventing one.
+  $('random-theme').addEventListener('click', () => selectPreset(PrismTheme.randomPresetId(activePreset)));
   const bb = PrismUI.switchRow('Bookmarks bar', 'Show the bookmarks strip under the toolbar.', s.appearance.bookmarksBar, (v) => updateAppearance({ bookmarksBar: v }));
   $('line-bookmarksbar').append(bb.line);
   applyPageAppearance();
@@ -299,26 +373,13 @@
   $('line-focus-indicators').append(focus.line);
 
   // Keep this page in sync when quick controls or another internal page changes
-  // appearance. Ignore broadcasts while local edits are being persisted.
+  // appearance. A broadcast that races a local write is queued rather than
+  // dropped, and replayed once our own write settles.
   if (window.prism.onSettingsChanged) window.prism.onSettingsChanged((next) => {
-    if (appearanceDirty || !next || !next.appearance) return;
+    if (!next || !next.appearance) return;
+    if (appearanceDirty) { queuedExternalAppearance = next.appearance; return; }
     s = next;
-    Object.assign(visual, { hue: 215, saturation: 75, gradient: 'aurora', motion: 'shimmer', intensity: 45 }, next.appearance.visualTheme || {});
-    Object.assign(accessibility, { textScale: 100, contrast: 'normal', largerTargets: false, reducedMotion: 'system', focusIndicators: true }, next.appearance.accessibility || {});
-    $('theme').value = s.appearance.theme || 'dark';
-    $('siteTheme').value = s.appearance.siteTheme || 'auto';
-    $('hue').value = visual.hue;
-    $('gradient').value = visual.gradient;
-    $('motion').value = visual.motion;
-    $('text-scale').value = accessibility.textScale;
-    $('text-scale-value').value = accessibility.textScale + '%';
-    $('contrast').value = accessibility.contrast;
-    $('reduced-motion').value = accessibility.reducedMotion;
-    bb.input.checked = !!s.appearance.bookmarksBar;
-    targets.input.checked = !!accessibility.largerTargets;
-    focus.input.checked = !!accessibility.focusIndicators;
-    applyPageAppearance();
-    renderThemes();
+    adoptAppearance(next.appearance);
   });
 
   // ---- privacy ----
@@ -334,6 +395,31 @@
   $('line-malware').append(mw.line);
   const ds = PrismUI.switchRow('Scan downloads', 'Hash finished downloads and quarantine threats.', s.security.downloadScan, (v) => save({ security: { downloadScan: v } }));
   $('line-scan').append(ds.line);
+  const df = PrismUI.switchRow('Scan with Windows Defender', 'Run the local Defender engine on every finished download. Nothing is uploaded.', s.security.defenderScan !== false, (v) => save({ security: { defenderScan: v } }));
+  $('line-defender').append(df.line);
+
+  // ---- downloads folder ----
+  async function refreshDownloads() {
+    const info = await window.prism.downloadsAntivirus();
+    const configured = (s.general && s.general.downloadDir) || '';
+    $('download-dir-note').textContent = configured
+      ? 'Saving to ' + configured
+      : 'Saving to the default Downloads folder: ' + info.dir;
+    $('av-note').textContent = info.available
+      ? 'Antivirus: ' + info.engine + ' is available, so finished downloads are scanned on this device.'
+      : 'Antivirus: Windows Defender was not found on this machine. Downloads are still checked against malware hash reputation, but there is no local signature scan.';
+  }
+  $('choose-dir').addEventListener('click', async () => {
+    const r = await window.prism.downloadsChooseFolder();
+    if (r && r.ok) { $('download-dir-note').textContent = 'Saving to ' + r.dir; }
+  });
+  $('reset-dir').addEventListener('click', async () => {
+    await save({ general: { downloadDir: '' } });
+    await refreshDownloads();
+  });
+  const aw = PrismUI.switchRow('Ask where to save each file', 'Show a Save dialog for every download instead of using the folder above.', !!(s.general && s.general.askWhereToSave), (v) => save({ general: { askWhereToSave: v } }));
+  $('line-ask-where').append(aw.line);
+  refreshDownloads();
 
   // ---- dns ----
   $('dnsMode').value = s.dns.secureDns;
@@ -357,6 +443,70 @@
   $('searxngUrl').addEventListener('change', () => save({ search: { searxngUrl: $('searxngUrl').value.trim() } }));
   $('searxngFallbacks').value = s.search.searxngFallbacks || '';
   $('searxngFallbacks').addEventListener('change', () => save({ search: { searxngFallbacks: $('searxngFallbacks').value.trim() } }));
+
+  // ---- local AI ----
+  (async function localAi() {
+    const enabledHost = $('aiEnabled');
+    const styleSel = $('aiSummaryStyle');
+    const tasksHost = $('aiTasks');
+    enabledHost.textContent = '';
+    enabledHost.appendChild(PrismUI.switchRow('', 'Turn local AI off entirely.',
+      s.ai.enabled !== false, (v) => save({ ai: { enabled: v } })));
+
+    let meta = null;
+    try { meta = await window.prism.aiTasks(); } catch (_) { meta = null; }
+    const styles = (meta && meta.summaryStyles) || ['paragraph', 'bullets', 'tldr'];
+    styleSel.textContent = '';
+    for (const id of styles) {
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = id.charAt(0).toUpperCase() + id.slice(1);
+      if (id === (s.ai.summaryStyle || 'paragraph')) opt.selected = true;
+      styleSel.appendChild(opt);
+    }
+    styleSel.addEventListener('change', () => save({ ai: { summaryStyle: styleSel.value } }));
+
+    // The Vision page reads this same setting through prism:ai:tasks, so the
+    // checkboxes here and the buttons on the page can never disagree.
+    const allTasks = (meta && meta.vision) || [];
+    const chosen = new Set(s.ai.visionTasks || allTasks.map((t) => t.id));
+    tasksHost.textContent = '';
+    for (const task of allTasks) {
+      const label = document.createElement('label');
+      label.style.cssText = 'display:flex; gap:6px; align-items:center; font-size:13px';
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.checked = chosen.has(task.id);
+      box.addEventListener('change', () => {
+        if (box.checked) chosen.add(task.id);
+        else chosen.delete(task.id);
+        // Never leave the page with nothing left to press.
+        if (!chosen.size) { chosen.add(task.id); box.checked = true; return; }
+        save({ ai: { visionTasks: [...chosen] } });
+      });
+      const text = document.createElement('span');
+      text.textContent = task.label;
+      label.append(box, text);
+      tasksHost.appendChild(label);
+    }
+
+    try {
+      const st = await window.prism.aiStatus();
+      const mb = (st.cache.bytes / 1048576).toFixed(1);
+      $('aiModels').textContent = st.bundled
+        ? 'Included with Prism, so they work offline. ' + (st.cache.files ? mb + ' MB downloaded on top.' : 'Nothing else downloaded.')
+        : 'Not part of this build — they download from Hugging Face on first use.';
+    } catch (_) { $('aiModels').textContent = 'Local AI is unavailable.'; }
+
+    $('aiClear').addEventListener('click', async () => {
+      $('aiClear').disabled = true;
+      const res = await window.prism.aiClearCache();
+      $('aiClear').disabled = false;
+      $('aiModels').textContent = res && res.error
+        ? 'Could not delete the downloads: ' + res.error
+        : 'Extra downloads deleted. The models that came with Prism are untouched.';
+    });
+  })();
 
   // ---- about ----
   (async function about() {
@@ -386,9 +536,11 @@
     }
   })();
 
-  if (location.hash === '#about') $('about').scrollIntoView();
+  if (location.hash === '#ai') $('aiCard').scrollIntoView();
+  else if (location.hash === '#about') $('about').scrollIntoView();
   else if (location.hash === '#accessibility') $('accessibility').scrollIntoView();
   else if (location.hash === '#privacy') $('privacy').scrollIntoView();
+  else if (location.hash === '#downloads') $('downloads').scrollIntoView();
 })();
 </script>
 </body>

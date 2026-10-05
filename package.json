@@ -1,24 +1,27 @@
 {
   "name": "prism-browser",
   "productName": "Prism",
-  "version": "1.0.5",
+  "version": "1.1.0",
   "description": "Prism: a privacy-focused desktop web browser.",
   "main": "src/main/main.js",
   "scripts": {
     "start": "electron .",
     "icons": "node scripts/process-logo.js",
     "release": "node scripts/release.js",
-    "test": "node test/search-web.test.js && node test/theme-engine.test.js && node test/update-identity.test.js && node test/adblock-matching.test.js && node test/release-helper.test.js && node test/menu-items.test.js && electron test/theme-ui.test.js && electron test/menu-ui.test.js",
+    "test": "node test/search-web.test.js && node test/theme-engine.test.js && node test/update-identity.test.js && node test/adblock-matching.test.js && node test/release-helper.test.js && node test/menu-items.test.js && node test/downloads-paths.test.js && node test/ai.test.js && electron test/theme-ui.test.js && electron test/menu-ui.test.js && electron test/bookmarks-bar-ui.test.js && electron test/store-install.test.js && electron test/downloads-ui.test.js && electron test/ai-ui.test.js",
     "test:ui": "electron test/theme-ui.test.js",
     "build": "electron-builder --win --dir",
     "build:legacy": "electron-builder --win",
     "build:dir:legacy": "electron-builder --win --dir",
-    "dist:legacy": "electron-builder --win nsis portable"
+    "dist:legacy": "electron-builder --win nsis portable",
+    "models": "node scripts/fetch-models.js",
+    "test:ai": "electron test/ai-ui.test.js"
   },
   "author": "Prism",
   "license": "MIT",
   "devDependencies": {
-    "pngjs": "^7.0.0"
+    "electron": "37.10.3",
+    "electron-builder": "26.15.3"
   },
   "build": {
     "appId": "com.prism.browser",
@@ -35,7 +38,10 @@
       "assets/prism.ico",
       "assets/prism-logo.png",
       "assets/wordmark.png",
-      "assets/wordmark@2x.png"
+      "assets/wordmark@2x.png",
+      "!node_modules/onnxruntime-node/bin/napi-v6/darwin/**",
+      "!node_modules/onnxruntime-node/bin/napi-v6/linux/**",
+      "!node_modules/onnxruntime-node/bin/napi-v6/win32/arm64/**"
     ],
     "win": {
       "icon": "assets/prism.ico",
@@ -68,8 +74,34 @@
     },
     "portable": {
       "artifactName": "Prism-${version}-portable.${ext}"
-    },"publish": {"provider": "github","owner":"shroomygod","repo":"PrismBrowser",
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "shroomygod",
+      "repo": "PrismBrowser",
       "releaseType": "release"
-    }
+    },
+    "asarUnpack": [
+      "**/node_modules/onnxruntime-node/bin/**",
+      "**/node_modules/@img/**",
+      "**/node_modules/sharp/**",
+      "**/node_modules/onnxruntime-web/dist/**"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/models",
+        "to": "models"
+      }
+    ]
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.3.0",
+    "pngjs": "^7.0.0"
+  },
+  "allowScripts": {
+    "electron-winstaller@5.4.0": true,
+    "electron@37.10.3": true,
+    "onnxruntime-node@1.30.0": true,
+    "protobufjs@7.6.6": true
   }
 }

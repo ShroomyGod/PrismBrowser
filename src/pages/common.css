@@ -137,32 +137,72 @@ table.list tr:hover td { background: color-mix(in srgb, var(--accent-soft) 60%, 
 :root[data-large-targets="true"] .switch { min-height: 44px; }
 :root[data-large-targets="true"] button { padding-block: 10px; }
 :root[data-large-targets="true"] input[type="checkbox"] { width: 22px; height: 22px; }
-.theme-gallery-card { padding: 14px; }
-.theme-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
-  gap: 9px; margin-top: 13px; max-height: 330px; overflow-y: auto; padding: 2px;
+/* ---------- theme gallery ----------
+   Chrome-style: a sticky category rail on the left and large labelled
+   thumbnails on the right, the whole catalog on one scrolling page. Each
+   card previews its theme with a mock tab strip and page rather than an
+   abstract colour chip, so a swatch reads as "what my browser will look
+   like" instead of "a colour somebody picked". */
+.theme-gallery { display: grid; grid-template-columns: 168px 1fr; gap: 18px; align-items: start; margin: 4px 0 8px; }
+.theme-categories {
+  position: sticky; top: 8px; display: flex; flex-direction: column; gap: 2px;
+  max-height: calc(100vh - 190px); overflow-y: auto; padding-right: 4px;
 }
-.theme-swatch {
-  position: relative; min-height: 68px; overflow: hidden; isolation: isolate;
-  display: flex; align-items: end; justify-content: space-between; gap: 6px;
-  padding: 8px; border: 1px solid var(--line); border-radius: 10px;
-  color: var(--swatch-ink, var(--text)); background-color: var(--bg3);
-  background-image: linear-gradient(125deg, var(--swatch-a), var(--swatch-b), var(--swatch-c));
-  text-shadow: 0 1px 3px rgba(0,0,0,.45);
-  text-align: left; font-size: 11px;
+.theme-category {
+  text-align: left; padding: 7px 10px; border-radius: 8px; border: 1px solid transparent;
+  background: transparent; color: var(--text-dim); font-size: 13px;
 }
-.theme-swatch[aria-pressed="true"] { outline: 3px solid var(--accent); outline-offset: 2px; }
-.theme-swatch:hover { transform: translateY(-2px); }
-.theme-swatch .swatch-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.theme-swatch .swatch-check { font-size: 14px; font-weight: 800; }
+.theme-category:hover { background: var(--bg3); color: var(--text); }
+.theme-category[aria-current="true"] { background: var(--accent-soft); color: var(--text); border-color: var(--accent); font-weight: 600; }
+.theme-grid { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+.theme-section { scroll-margin-top: 12px; }
+.theme-section-title { margin: 0 0 9px; font-size: 14px; font-weight: 700; letter-spacing: .01em; }
+.theme-section-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 14px; }
+.theme-card {
+  position: relative; display: flex; flex-direction: column; align-items: stretch; gap: 6px; padding: 0;
+  background: transparent; border: 0; text-align: center; color: var(--text);
+}
+.theme-card:hover .theme-thumb { transform: translateY(-2px); }
+.theme-card[aria-pressed="true"] .theme-thumb { outline: 3px solid var(--accent); outline-offset: 2px; }
+.theme-thumb {
+  display: block; position: relative; width: 100%; aspect-ratio: 4 / 3; border-radius: 10px;
+  overflow: hidden; border: 1px solid var(--line);
+  background-color: var(--thumb-color); background-image: var(--thumb-image, none);
+  background-size: 220% 220%;
+  transition: transform .12s ease;
+}
+.theme-thumb-tab {
+  position: absolute; top: 6px; left: 6px; width: 42%; height: 11px; border-radius: 4px;
+  background: var(--thumb-active);
+}
+.theme-thumb-bar {
+  position: absolute; top: 6px; right: 6px; width: 30%; height: 11px; border-radius: 4px;
+  background: color-mix(in srgb, var(--thumb-active) 55%, transparent);
+  border: 1px solid color-mix(in srgb, var(--thumb-ink) 25%, transparent);
+}
+.theme-thumb-page {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 58%; background: var(--thumb-page);
+  border-top: 1px solid var(--thumb-page-line);
+}
+.theme-thumb-page::before,
+.theme-thumb-page::after {
+  content: ""; position: absolute; left: 10%; height: 4px; border-radius: 2px;
+  background: var(--thumb-page-line);
+}
+.theme-thumb-page::before { top: 26%; width: 52%; }
+.theme-thumb-page::after { top: 46%; width: 34%; background: var(--thumb-accent); opacity: .75; }
+.theme-card-name { font-size: 12px; line-height: 1.3; }
+.theme-card-check {
+  position: absolute; top: 6px; right: 6px; width: 18px; height: 18px; border-radius: 50%;
+  background: var(--accent); color: var(--bg); font-size: 11px; font-weight: 800;
+  line-height: 18px; text-align: center;
+}
 #text-scale { accent-color: var(--accent); }
-:root[data-motion="shimmer"] .theme-swatch::before,
-:root[data-motion="wave"] .theme-swatch::before {
-  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
-  background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,.32) 50%, transparent 60%);
-  background-size: 220% 100%; animation: theme-shimmer var(--motion-duration, 8s) linear infinite;
+@media (max-width: 720px) {
+  .theme-gallery { grid-template-columns: 1fr; }
+  .theme-categories { position: static; flex-direction: row; flex-wrap: wrap; max-height: none; }
 }
-@keyframes theme-shimmer { to { background-position: -220% 0; } }
+:root[data-large-targets="true"] .theme-card { min-height: 44px; }
 /* ---------- motion ----------
    Interactive surfaces animate so the UI reads as responsive instead of
    mechanical. Deliberately short and low-amplitude: enough to feel

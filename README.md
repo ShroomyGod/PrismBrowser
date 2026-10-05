@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <strong>Current package version:</strong> 1.0.5 · <strong>Configured installer target:</strong> Windows x64
+  <strong>Current package version:</strong> 1.1.0 · <strong>Configured installer target:</strong> Windows x64
 </p>
 
 > **Project status:** Prism is an actively changing desktop-browser project. Features described below reflect the current source tree; a successful build, live search-provider integration, store search, or security verdict must be tested in the actual packaged app before being treated as production-ready.
@@ -65,6 +65,13 @@ The interface is assembled from an Electron main process, a dedicated shell view
 - The toolbar extension menu lists installed extensions and links to extension management and both stores.
 
 Store search currently parses the stores' HTML and depends on their page markup. If a store changes its markup, search can fail even while manual installation by extension ID or URL remains available.
+
+### Local AI
+
+- Prism Vision describes, transcribes and finds things in an image, and summarises the page you are on as a paragraph, a tldr or bullets.
+- SmolVLM-256M-Instruct handles image descriptions, OCR, object finding and text-guided image matching; SmolLM-135M-Instruct handles local summaries and basic text tasks. Both use Transformers.js in a worker thread, remain on-device, and need no separate runtime such as Ollama.
+- The model weights are included in the installer, so an installed Prism Vision and summaries work with no network at all. Anything the installer does not carry is downloaded once into the profile and reused from then on.
+- Settings can switch local AI off, choose the summary style, and choose which Prism Vision tasks the page offers.
 
 ### Updates
 
@@ -133,6 +140,7 @@ The package manifest and lockfile are currently out of sync regarding dependency
 | `npm start` | Launch Electron using `src/main/main.js`. |
 | `npm test` | Run search-web, generated-theme, and Electron theme/settings UI tests. |
 | `npm run icons` | Regenerate icons and wordmarks from the source artwork in `assets/`. |
+| `npm run models` | Download the local AI weights into `resources/models/` so they can be bundled into the installer. Run this before `npm run release`. |
 | `npm run build` | Build the configured Windows application directory with Electron Builder. |
 | `npm run release` | Regenerate/validate icons, clean prior build outputs, build the Windows installer and portable executable, verify artifacts, and publish (replacing any same-version GitHub release) if a GitHub token is available. |
 
@@ -177,7 +185,7 @@ Never commit the token, put it in `package.json`, or ship it inside Prism. Git t
 
 ## Tests
 
-`npm test` runs search-web unit tests, generated-theme tests, updater identity tests, release-script tests, and a real Electron theme/settings UI test. The `test/` directory also contains Electron regression tests for browser layout, overlays, bookmarks, compatible site themes, persistence, and migration. These focused tests are not a comprehensive suite.
+`npm test` runs the search-web, generated-theme, updater identity, release-script, menu, downloads and local-AI unit tests, then Electron UI tests including a real end-to-end run of the AI feature against the actual models. The `test/` directory also contains Electron regression tests for browser layout, overlays, bookmarks, compatible site themes, persistence, and migration. These focused tests are not a comprehensive suite.
 
 For meaningful changes, also test the user-facing behavior in the packaged build—for example, search navigation with ad blocking enabled, private-window cleanup, download scanning, extensions, and update installation. A passing build alone does not validate these flows.
 
@@ -185,12 +193,14 @@ For meaningful changes, also test the user-facing behavior in the packaged build
 
 | Path | Contents |
 | --- | --- |
-| `src/main/` | Electron main-process modules: tabs, sessions, settings, security, updater, search, and extensions. |
+| `src/main/` | Electron main-process modules: tabs, sessions, settings, security, updater, search, extensions, and `ai.js` (owner of the local AI worker). |
+| `src/ai/` | Local AI: `tasks.js` is the pure task/model table, `worker.js` runs SmolVLM and SmolLM through Transformers.js in a worker thread. |
+| `resources/models/` | Model weights staged by `npm run models` and copied into the installer by `build.extraResources`. Downloaded, not committed. |
 | `src/shell/` | Custom browser chrome and its stylesheet. |
 | `src/pages/` | Internal pages for new tabs, search, settings, history, bookmarks, downloads, passwords, extensions, privacy, and errors. |
 | `src/preload/` | Context-isolated IPC bridges for the shell and internal pages. |
 | `assets/` | Source logo artwork and generated application icons. |
-| `scripts/` | Logo processing, the Windows release build, and the release-notes template. |
+| `scripts/` | Logo processing, model staging, the Windows release build, and the release-notes template. |
 | `test/` | Search-web tests and additional focused probes. |
 | `src-tauri/` | Legacy Tauri/Servo-era project files; not part of the current Electron entry path. |
 

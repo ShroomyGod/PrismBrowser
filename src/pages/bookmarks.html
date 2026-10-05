@@ -63,6 +63,18 @@
 
       const act = document.createElement('td');
       act.style.textAlign = 'right';
+      // Being on the bookmarks bar is a per-bookmark choice, and this is the
+      // place to change it without deleting and re-staritng the bookmark.
+      const barBtn = document.createElement('button');
+      barBtn.className = 'small';
+      barBtn.textContent = item.bar ? 'Hide from bar' : 'Show on bar';
+      barBtn.title = item.bar ? 'Remove it from the bookmarks bar' : 'Add it to the bookmarks bar';
+      barBtn.addEventListener('click', async () => {
+        try { await window.prism.bookmarkSetBar(item.id, !item.bar); } catch (_) {}
+        load();
+      });
+      act.append(barBtn);
+
       const del = document.createElement('button');
       del.className = 'small';
       del.textContent = 'Remove';

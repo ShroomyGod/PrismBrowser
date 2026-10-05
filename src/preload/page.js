@@ -2,6 +2,21 @@
 // to web content: we check the origin before defining window.prism.
 const { contextBridge, ipcRenderer } = require('electron');
 
+// The store shim is injected into store pages and needs a way to ask the main
+// process to install. Exposed ONLY on the store origins: this is a web page
+// context, so anything left on window here is reachable by that page's scripts.
+const STORE_HOSTS = ['chromewebstore.google.com', 'chrome.google.com', 'microsoftedge.microsoft.com', 'addons.microsoft.com'];
+const isStorePage = STORE_HOSTS.indexOf(location.hostname.toLowerCase()) !== -1;
+
+if (isStorePage) {
+  contextBridge.exposeInMainWorld('prismStore', {
+    install: (source, id) => ipcRenderer.invoke('prism:extensions:install', { source, input: id }),
+    // Surfaces an install failure to the shell, the same path a threat uses, so
+    // a rejected install is visible instead of only a red button.
+    report: (message) => ipcRenderer.send('prism:store-install-failed', { message: String(message || '') })
+  });
+}
+
 if (location.protocol === 'prism:') {
   contextBridge.exposeInMainWorld('prism', {
     // settings
@@ -30,11 +45,17 @@ if (location.protocol === 'prism:') {
     // bookmarks
     bookmarksList: () => ipcRenderer.invoke('prism:bookmarks:list'),
     bookmarksRemove: (id) => ipcRenderer.invoke('prism:bookmarks:remove', { id }),
+    bookmarkSetBar: (id, on) => ipcRenderer.invoke('prism:bookmarks:set-bar', { id, on }),
 
     // downloads
     downloadsList: () => ipcRenderer.invoke('prism:downloads:list'),
     downloadsOpen: (path, reveal) => ipcRenderer.invoke('prism:downloads:open', { path, reveal }),
+    downloadsRun: (path) => ipcRenderer.invoke('prism:downloads:run', { path }),
+    downloadsReveal: (path) => ipcRenderer.invoke('prism:downloads:reveal', { path }),
+    downloadsDeleteFile: (path) => ipcRenderer.invoke('prism:downloads:delete-file', { path }),
     downloadsClear: () => ipcRenderer.invoke('prism:downloads:clear'),
+    downloadsAntivirus: () => ipcRenderer.invoke('prism:downloads:antivirus'),
+    downloadsChooseFolder: () => ipcRenderer.invoke('prism:downloads:choose-folder'),
     onDownloadThreat: (fn) => ipcRenderer.on('prism:download-threat', (_e, d) => fn(d)),
     onDownloadsChanged: (fn) => ipcRenderer.on('prism:downloads-changed', () => fn()),
 
@@ -54,6 +75,17 @@ if (location.protocol === 'prism:') {
     extensionsRemove: (id) => ipcRenderer.invoke('prism:extensions:remove', { id }),
     extensionsReload: (id) => ipcRenderer.invoke('prism:extensions:reload', { id }),
     onExtensionsChanged: (fn) => ipcRenderer.on('prism:extensions-changed', (_e, list) => fn(list)),
+
+    // local AI (Prism Vision, page summaries)
+    aiStatus: () => ipcRenderer.invoke('prism:ai:status'),
+    aiTasks: () => ipcRenderer.invoke('prism:ai:tasks'),
+    aiWatch: () => ipcRenderer.invoke('prism:ai:watch'),
+    aiCapture: () => ipcRenderer.invoke('prism:ai:capture'),
+    aiVision: (image, task, input) => ipcRenderer.invoke('prism:ai:vision', { image, task, input }),
+    aiSummarise: (style) => ipcRenderer.invoke('prism:ai:summarise', { style }),
+    aiSummariseText: (text, style) => ipcRenderer.invoke('prism:ai:summarise-text', { text, style }),
+    aiClearCache: () => ipcRenderer.invoke('prism:ai:clear-cache'),
+    onAiProgress: (fn) => ipcRenderer.on('prism:ai:progress', (_e, d) => fn(d)),
 
     // privacy
     privacyStats: () => ipcRenderer.invoke('prism:privacy:stats'),

@@ -108,25 +108,13 @@
       <button class="pop-link" id="open-privacy">Privacy dashboard</button>
     </div>
 
-    <!-- Quick appearance picker -->
-    <div id="theme-pop" style="display:none">
-      <div class="pop-row"><span class="pop-title">Appearance</span></div>
-      <div class="theme-mode" role="group" aria-label="Base browser theme">
-        <button data-base-theme="dark">Dark</button><button data-base-theme="light">Light</button><button data-base-theme="system">System</button>
-      </div>
-      <label class="theme-label" for="shell-hue">Accent hue</label>
-      <input id="shell-hue" type="range" min="0" max="359" aria-label="Browser theme hue">
-      <label class="theme-label" for="shell-gradient">Gradient</label>
-      <select id="shell-gradient">
-        <option value="aurora">Aurora</option><option value="sunset">Sunset</option><option value="ocean">Ocean</option>
-        <option value="candy">Candy</option><option value="ember">Ember</option><option value="forest">Forest</option><option value="none">Solid</option>
-      </select>
-      <label class="theme-label" for="shell-motion">Motion</label>
-      <select id="shell-motion">
-        <option value="none">Still</option><option value="shimmer">Shimmer</option><option value="drift">Drift</option>
-        <option value="breathe">Breathe</option><option value="pulse">Pulse</option><option value="wave">Wave</option>
-      </select>
-      <button class="pop-link" id="theme-random">Surprise me</button>
+    <!-- Quick appearance picker --><div id="theme-pop" style="display:none">
+      <div class="pop-row"><span class="pop-title">Theme</span><button class="pop-link inline" id="theme-random">Surprise me</button></div>
+      <!-- Filled from PrismTheme.PRESETS: one row per category, click to apply.
+           Kept short and searchable-by-scanning rather than the full gallery;
+           the complete gallery lives in Settings. -->
+      <div id="theme-presets" class="theme-presets" role="group" aria-label="Themes"></div>
+      <button class="pop-link" id="theme-all">All themes in Settings</button>
       <button class="pop-link" id="theme-accessibility">Accessibility settings</button>
     </div>
 

@@ -11,6 +11,7 @@ const net = require('electron').net;
 const { app, shell } = require('electron');
 const settings = require('./settings');
 const stores = require('./stores');
+const downloads = require('./downloads');
 
 const FEEDS = {
   urlhaus: { url: 'https://urlhaus.abuse.ch/downloads/csv_recent/', kind: 'urlhaus-csv' },
@@ -179,7 +180,8 @@ class Security {
       const host = hostOf(url);
       const entry = {
         id, url, filename: item.getFilename(), path: '', state: 'waiting',
-        threat: null, sha256: null, ts: Date.now(), size: 0, mime: item.getMimeType()
+        threat: null, sha256: null, ts: Date.now(), size: 0, mime: item.getMimeType(),
+        scannedBy: null
       };
       stores.addDownload(entry);
       if (this.onEvent) this.onEvent('downloads-changed', {});
@@ -190,6 +192,18 @@ class Security {
         this.stats.downloadsBlocked++;
         if (this.onEvent) this.onEvent('download-threat', { id, filename: entry.filename, threat: 'Download blocked: the host is on the malware blocklist.' });
         return;
+      }
+
+      // Put the file where the user asked for it, never over an existing file.
+      // Done per download because Electron exposes no session-level download
+      // directory preference; see downloads.prepareTarget.
+      try {
+        const target = downloads.prepareTarget(item);
+        if (target.mode === 'folder') {
+          stores.updateDownload(id, { path: target.path });
+        }
+      } catch (e) {
+        console.error('[security] could not set the download save path', e.message);
       }
 
       item.on('updated', (_e, state) => {
@@ -210,10 +224,39 @@ class Security {
         if (this.onEvent) this.onEvent('downloads-changed', {});
         if (state !== 'completed' || !p || !cfg.downloadScan) return;
 
+        // A scan that finds something must not leave the file sitting in the
+        // user's Downloads folder while we decide what to do about it, so
+        // quarantine first and only report once the file is out of reach.
         try {
           const hash = crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
           stores.updateDownload(id, { sha256: hash });
-          const verdict = await this.scanHash(hash, p);
+
+          // Local signature scan first: no upload, catches anything Defender
+          // knows about, including files URLhaus has never seen.
+          let verdict = null;
+          let scannedBy = null;
+          if (cfg.defenderScan !== false) {
+            stores.updateDownload(id, { state: 'scanning' });
+            if (this.onEvent) this.onEvent('downloads-changed', {});
+            const scan = await downloads.scanWithDefender(p);
+            // Only claim Defender scanned it when the scan actually ran. A
+            // missing or disabled engine must show as "not scanned" rather
+            // than as a reassuring green tick.
+            if (scan.ran) scannedBy = 'Windows Defender';
+            if (scan.threat) verdict = scan.threat;
+          }
+          // Then the free hash-reputation lookup, which also covers the case
+          // where Defender is missing or disabled.
+          if (!verdict) {
+            const rep = await this.scanHash(hash, p);
+            if (rep) { verdict = rep; scannedBy = 'URLhaus'; }
+          }
+          // Clean result: return the row to "completed". Without this the entry
+          // stays stuck on "scanning" forever, because nothing else writes the
+          // state again once the download itself finished.
+          if (!verdict) stores.updateDownload(id, { state: 'completed', scannedBy });
+          else stores.updateDownload(id, { scannedBy });
+
           if (verdict) {
             const qname = path.join(this.quarantineDir(), Date.now() + '-' + path.basename(p));
             try { fs.renameSync(p, qname); } catch (_) {

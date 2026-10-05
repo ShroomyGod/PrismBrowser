@@ -1,0 +1,265 @@
+<!doctype html>
+<html data-theme="dark">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="/assets/icon-32.png">
+<link rel="stylesheet" href="/common.css">
+<title>Prism Vision - Prism</title>
+<style>
+  .vision-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+  @media (max-width: 860px) { .vision-grid { grid-template-columns: 1fr; } }
+
+  /* Drop target doubles as the image preview, so the page has one focal point
+     instead of a separate preview pane. */
+  .drop {
+    border: 1.5px dashed var(--line); border-radius: 10px; background: var(--panel, rgba(127,127,127,.05));
+    min-height: 260px; display: flex; align-items: center; justify-content: center;
+    padding: 14px; text-align: center; cursor: pointer; transition: border-color .15s, background .15s;
+  }
+  .drop.over { border-color: var(--accent); }
+  .drop img { max-width: 100%; max-height: 420px; border-radius: 6px; display: block; }
+  .drop .ph { color: var(--dim); font-size: 13px; max-width: 320px; }
+
+  .tasks { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 0; }
+  .tasks button.on { border-color: var(--accent); color: var(--accent); }
+
+  #out { margin-top: 12px; min-height: 76px; white-space: pre-wrap; word-break: break-word;
+         font-size: 14px; line-height: 1.55; }
+  #out.empty { color: var(--dim); }
+
+  .bar { height: 3px; border-radius: 2px; background: var(--line); overflow: hidden; margin-top: 12px; display: none; }
+  .bar.on { display: block; }
+  .bar > i { display: block; height: 100%; width: 35%; background: var(--accent);
+             animation: slide 1.1s ease-in-out infinite; }
+  @keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(320%); } }
+
+  #query { width: 100%; margin-top: 10px; }
+  .row-between { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .models { font-size: 13px; }
+  .models code { background: var(--panel, rgba(127,127,127,.12)); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topnav">
+    <a href="/newtab">New Tab</a>
+    <a href="/history">History</a>
+    <a href="/downloads">Downloads</a>
+    <a href="/extensions">Extensions</a>
+    <a href="/vision" class="on">Prism Vision</a>
+    <a href="/settings">Settings</a>
+  </div>
+  <div class="page-head">
+    <img class="wordmark" src="/assets/wordmark@2x.png" alt="Prism">
+    <h1>Prism Vision</h1>
+  </div>
+
+  <div class="card">
+    <div class="muted" style="margin-bottom:12px">
+      Everything here runs on this device. Images and page text are analysed by a local
+      model and never sent anywhere.
+    </div>
+
+    <div class="vision-grid">
+      <div>
+        <div id="drop" class="drop" role="button" tabindex="0" aria-label="Choose or drop an image">
+          <div id="ph" class="ph">Drop an image here, paste one, or click to choose a file.</div>
+        </div>
+        <input id="file" type="file" accept="image/*" hidden>
+
+        <div id="tasks" class="tasks" role="group" aria-label="What to do with the image"></div>
+        <input id="query" type="text" placeholder="What should Prism look for?" hidden>
+        <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
+          <button id="run" type="button" disabled>Run on this device</button>
+          <button id="recapture" type="button" class="small" hidden>Use the page I am on</button>
+          <button id="copy" type="button" class="small" hidden>Copy result</button>
+        </div>
+        <div id="bar" class="bar"><i></i></div>
+      </div>
+
+      <div>
+        <h3 style="margin:0 0 6px; font-size:13px; letter-spacing:.04em; text-transform:uppercase; color:var(--dim)">Result</h3>
+        <div id="out" class="empty">No image analysed yet.</div>
+        <div id="timing" class="muted" style="margin-top:10px; font-size:12px"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card" id="models" style="margin-top:16px">
+    <div class="row-between">
+      <h3 style="margin:0; font-size:14px">Local models</h3>
+      <button id="clear-cache" class="small">Delete extra downloads</button>
+    </div>
+    <div class="models muted" style="margin-top:10px" id="model-note">Checking…</div>
+  </div>
+</div>
+<script src="/common.js"></script>
+<script>
+(async function () {
+  await PrismUI.boot();
+  window.prism.aiWatch();
+
+  const $ = (id) => document.getElementById(id);
+  const drop = $('drop'), ph = $('ph'), file = $('file'), out = $('out');
+  const bar = $('bar'), run = $('run'), timing = $('timing');
+  const query = $('query'), copy = $('copy'), recapture = $('recapture');
+
+  // Task list comes from src/ai/tasks.js via the main process so the page and
+  // the model can never disagree about what is supported. The same call also
+  // carries the user's choices: which tasks are on, and whether local AI is on
+  // at all.
+  let tasks = [];
+  let aiEnabled = true;
+  try {
+    const meta = await window.prism.aiTasks();
+    tasks = meta.vision || [];
+    aiEnabled = meta.enabled !== false;
+  } catch (_) { tasks = []; }
+
+  let current = tasks[0] ? tasks[0].id : 'caption';
+  let image = null;
+
+  function setBusy(on, message) {
+    bar.classList.toggle('on', on);
+    run.disabled = on || !image;
+    recapture.disabled = on;
+    if (message) note(message);
+  }
+
+  function note(message) {
+    out.textContent = message || 'No image analysed yet.';
+    out.classList.toggle('empty', !message || message === 'No image analysed yet.');
+  }
+
+  function showResult(text, ms) {
+    out.textContent = text || 'The model returned nothing for this image.';
+    out.classList.toggle('empty', !text);
+    timing.textContent = ms ? 'Took ' + (ms / 1000).toFixed(1) + 's on this device.' : '';
+    copy.hidden = !text;
+  }
+
+  tasks.forEach((t) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'small' + (t.id === current ? ' on' : '');
+    b.textContent = t.label;
+    b.title = t.hint;
+    b.addEventListener('click', () => {
+      current = t.id;
+      document.querySelectorAll('#tasks button').forEach((el, i) => {
+        el.classList.toggle('on', tasks[i].id === current);
+      });
+      query.hidden = !t.needsInput;
+      run.disabled = !image;
+    });
+    $('tasks').appendChild(b);
+  });
+
+  function accept(dataUrl) {
+    image = dataUrl;
+    ph.hidden = true;
+    let img = drop.querySelector('img');
+    if (!img) { img = document.createElement('img'); img.alt = 'The image being analysed'; drop.appendChild(img); }
+    img.src = dataUrl;
+    run.disabled = false;
+    note('Ready. Choose what to do with it.');
+  }
+
+  // A file from disk, downscaled if huge so a 20MP photo does not spend ten
+  // seconds being encoded before the model ever sees it.
+  function readFile(f) {
+    if (!f || !/^image\//.test(f.type)) return;
+    const reader = new FileReader();
+    reader.onload = () => accept(String(reader.result));
+    reader.readAsDataURL(f);
+  }
+
+  drop.addEventListener('click', () => file.click());
+  drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); file.click(); } });
+  file.addEventListener('change', () => readFile(file.files && file.files[0]));
+  ['dragenter', 'dragover'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('over'); }));
+  drop.addEventListener('drop', (e) => {
+    const dt = e.dataTransfer;
+    if (dt && dt.files && dt.files[0]) readFile(dt.files[0]);
+  });
+  document.addEventListener('paste', (e) => {
+    for (const item of e.clipboardData.items) {
+      if (item.type.indexOf('image/') === 0) { readFile(item.getAsFile()); return; }
+    }
+  });
+
+  recapture.addEventListener('click', async () => {
+    setBusy(true, 'Capturing the page you are on…');
+    const res = await window.prism.aiCapture();
+    if (res && res.error) { setBusy(false); note(res.error); return; }
+    accept(res.image);
+    setBusy(false);
+  });
+
+  if (!aiEnabled) {
+    // Turned off in Settings: the page still opens, but it must not pretend to
+    // be one keystroke away from running a model the user switched off.
+    run.disabled = true;
+    note('Local AI is turned off in Settings.');
+  }
+
+  run.addEventListener('click', async () => {
+    if (!image) return;
+    setBusy(true, 'Working on it…');
+    const res = await window.prism.aiVision(image, current, query.value);
+    if (res && res.error) { setBusy(false); note(res.error); return; }
+    showResult((res.result && res.result.text) || '', (res.result || {}).ms);
+    setBusy(false);
+  });
+
+  copy.addEventListener('click', () => {
+    const text = out.textContent || '';
+    if (text) navigator.clipboard.writeText(text);
+  });
+
+  // Model downloads are slow the first time; say so instead of appearing hung.
+  window.prism.onAiProgress((p) => {
+    if (!p) return;
+    if (p.stage === 'loading') note('Loading ' + (p.model || 'the model') + ' the first time…');
+    else if (p.stage === 'running') note('Working on it…');
+    else if (p.stage === 'crashed') { setBusy(false); note(p.error || 'The AI engine stopped.'); }
+  });
+
+  async function refreshModels() {
+    const note$ = $('model-note');
+    try {
+      const st = await window.prism.aiStatus();
+      const mb = (st.cache.bytes / 1048576).toFixed(1);
+      // Say plainly where the weights came from: an installed Prism already has
+      // them, and "downloaded on first use" would be a lie there.
+      const origin = st.bundled
+        ? 'Included with Prism, so this works offline. <span class="muted">' + st.bundledDir + '</span>'
+        : 'Not part of this build — they are fetched from Hugging Face on first use.';
+      note$.innerHTML =
+        '<div>Vision: <code>' + st.vision.id + '</code> (' + st.vision.dtype + ')</div>' +
+        '<div>Text: <code>' + st.text.id + '</code> (' + st.text.dtype + ')</div>' +
+        '<div style="margin-top:6px">' + origin + '</div>' +
+        '<div style="margin-top:6px">' + (st.cache.files
+          ? st.cache.files + ' additional files, ' + mb + ' MB downloaded to ' + st.cache.dir
+          : 'No additional downloads.') + '</div>';
+    } catch (_) { note$.textContent = 'Local AI is unavailable.'; }
+  }
+
+  $('clear-cache').addEventListener('click', async () => {
+    $('clear-cache').disabled = true;
+    const res = await window.prism.aiClearCache();
+    $('clear-cache').disabled = false;
+    if (res && res.error) { $('model-note').textContent = 'Could not delete the downloads: ' + res.error; return; }
+    await refreshModels();
+  });
+
+  await refreshModels();
+
+  // #models is a real target from the menu so "Manage local models" lands here.
+  if (location.hash === '#models') $('models').scrollIntoView();
+  if (location.hash === '#capture') recapture.click();
+})();
+</script>
+</body>
+</html>

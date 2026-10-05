@@ -33,7 +33,9 @@
     exit: '<svg viewBox="0 0 16 16" width="15" height="15"><path d="M6 3.5H4a1.5 1.5 0 0 0-1.5 1.5v6A1.5 1.5 0 0 0 4 12.5h2M10 5.5L13 8l-3 2.5M13 8H6" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     search: '<svg viewBox="0 0 16 16" width="15" height="15"><circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.4" fill="none"/><path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/></svg>',
     shield: '<svg viewBox="0 0 16 16" width="15" height="15"><path d="M8 1.8l5 1.8v3.6c0 3.3-2.1 5.9-5 7-2.9-1.1-5-3.7-5-7V3.6z" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linejoin="round"/></svg>',
-    copy: '<svg viewBox="0 0 16 16" width="15" height="15"><rect x="5.5" y="5.5" width="8" height="8" rx="1.3" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M10.5 3.5h-7a1 1 0 0 0-1 1v7" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round"/></svg>'
+    copy: '<svg viewBox="0 0 16 16" width="15" height="15"><rect x="5.5" y="5.5" width="8" height="8" rx="1.3" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M10.5 3.5h-7a1 1 0 0 0-1 1v7" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linecap="round"/></svg>',
+    spark: '<svg viewBox="0 0 16 16" width="15" height="15"><path d="M8 1.8l1.4 4.1 4.1 1.4-4.1 1.4L8 12.8 6.6 8.7 2.5 7.3l4.1-1.4z" stroke="currentColor" stroke-width="1.2" fill="none" stroke-linejoin="round"/></svg>',
+    eye: '<svg viewBox="0 0 16 16" width="15" height="15"><path d="M1.8 8S4 4 8 4s6.2 4 6.2 4-2.2 4-6.2 4S1.8 8 1.8 8z" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linejoin="round"/><circle cx="8" cy="8" r="1.9" stroke="currentColor" stroke-width="1.3" fill="none"/></svg>'
   };
 
   const TRANSLATE_LANGUAGES = [
@@ -82,6 +84,7 @@
             { id: 'downloads-recent', label: 'Recent downloads', list: 'downloads' },
             { separator: true, id: 'downloads-sep' },
             { id: 'downloads-show', label: 'Show all downloads', action: 'downloads-page' },
+            { id: 'downloads-folder', label: 'Change download folder', action: 'downloads-folder' },
             { id: 'downloads-clear', label: 'Clear download list', action: 'downloads-clear' }
           ] },
           { id: 'bookmarks', label: 'Bookmarks and lists', icon: ic.bookmark, submenu: [
@@ -130,6 +133,14 @@
             { separator: true, id: 'share-sep' },
             { id: 'share-link', label: 'Copy link to this page', icon: ic.copy, action: 'copy-page-url' },
             { id: 'share-cwd', label: 'Copy page text', icon: ic.copy, action: 'copy-page-text' }
+          ] },
+          // Local AI. Everything here runs on this machine via a worker thread
+          // (src/ai/worker.js) -- no request leaves the device.
+          { id: 'ai', label: 'Prism AI', icon: ic.spark, submenu: [
+            { id: 'ai-vision', label: 'Prism Vision', icon: ic.eye, action: 'ai-vision' },
+            { id: 'ai-summarise', label: 'Summarise this page', action: 'ai-summarise' },
+            { separator: true, id: 'ai-sep' },
+            { id: 'ai-models', label: 'Manage local models', action: 'ai-models' }
           ] },
           { id: 'more', label: 'More tools', icon: ic.tools, submenu: [
             { id: 'more-devtools', label: 'Developer tools', shortcut: 'Ctrl+Shift+I', action: 'devtools' },

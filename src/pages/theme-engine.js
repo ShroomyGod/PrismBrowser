@@ -1,105 +1,501 @@
-// theme-engine.js — shared generated themes and accessibility tokens for Prism.
-// No theme assets or third-party dependencies: combinations are calculated from
-// a hue, saturation, gradient family, and motion recipe at runtime.
+// theme-engine.js — Prism's theme catalog and design tokens.
+//
+// Themes here are *designed*, not generated. The earlier implementation was a
+// cross-product of 360 hues x 4 saturations x 8 gradients x 6 motions, which
+// produced 69,120 recipes that mostly did not hang together: the accent came
+// from one hue while the chrome gradient was sampled at fixed offsets from a
+// different part of the wheel, so neighbouring swatches clashed and none of
+// them resembled a real product's palette.
+//
+// Instead every entry below is a hand-picked palette that already works: one
+// background, one ink, one accent, one frame colour. Everything else (the
+// surface ramp, borders, muted text, chrome highlight, texture overlay) is
+// derived from those four by mixing toward the ink, which is what keeps 120
+// themes internally consistent. Adding a theme means adding four colours.
+//
+// No theme assets or third-party dependencies: frames are CSS gradients and
+// repeating patterns, so the catalog costs no bytes of artwork.
 'use strict';
 
 (function installThemeEngine(root) {
-  const GRADIENTS = ['aurora', 'sunset', 'ocean', 'candy', 'ember', 'forest', 'mono', 'none'];
-  const MOTIONS = ['none', 'shimmer', 'drift', 'breathe', 'pulse', 'wave'];
-  const SATURATIONS = [45, 60, 75, 90];
-  const THEME_COUNT = 360 * SATURATIONS.length * GRADIENTS.length * MOTIONS.length;
+  // ---- colour maths -------------------------------------------------------
+  // Small and dependency-free on purpose: the catalog is data, and the tests
+  // need contrast ratios, so the maths has to be reachable and inspectable.
+
   const clamp = (value, min, max, fallback) => {
     const n = Number(value);
     return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : fallback;
   };
-  const wrapHue = (h) => ((Math.round(h) % 360) + 360) % 360;
-  const hsl = (h, s, l) => `hsl(${wrapHue(h)} ${clamp(s, 0, 100, 60)}% ${clamp(l, 0, 100, 50)}%)`;
-  const hsla = (h, s, l, a) => `hsl(${wrapHue(h)} ${clamp(s, 0, 100, 60)}% ${clamp(l, 0, 100, 50)}% / ${clamp(a, 0, 1, 0.2)})`;
 
-  const GRADIENT_OFFSETS = {
-    aurora: [-45, 0, 80], sunset: [-35, 35, 105], ocean: [-20, 35, 195],
-    candy: [-80, 20, 140], ember: [-18, 16, 46], forest: [-55, -10, 50],
-    mono: [0, 0, 0], none: [0, 0, 0]
-  };
-
-  function normalize(input) {
-    const v = input || {};
-    const gradient = GRADIENTS.includes(v.gradient) ? v.gradient : 'aurora';
-    const motion = MOTIONS.includes(v.motion) ? v.motion : 'none';
-    return {
-      hue: wrapHue(clamp(v.hue, 0, 359, 215)),
-      saturation: clamp(v.saturation, 35, 95, 75),
-      gradient,
-      motion,
-      intensity: clamp(v.intensity, 0, 100, 45)
-    };
+  function parseHex(input, fallback) {
+    const match = /^#?([\da-f]{3}|[\da-f]{6})$/i.exec(String(input == null ? '' : input).trim());
+    if (!match) return parseHex(fallback, '#808080');
+    let hex = match[1];
+    if (hex.length === 3) hex = hex.split('').map((c) => c + c).join('');
+    return [
+      parseInt(hex.slice(0, 2), 16),
+      parseInt(hex.slice(2, 4), 16),
+      parseInt(hex.slice(4, 6), 16)
+    ];
   }
 
-  function resolve(input, baseTheme) {
-    const v = normalize(input);
-    const offsets = GRADIENT_OFFSETS[v.gradient];
-    const dark = baseTheme !== 'light';
-    const accent = hsl(v.hue, v.saturation, dark ? 70 : 42);
-    const surfaceHue = v.hue;
-    const a = hsla(surfaceHue + offsets[0], Math.max(30, v.saturation - 15), dark ? 58 : 46, v.gradient === 'none' ? 0 : (0.04 + v.intensity / 400));
-    const b = hsla(surfaceHue + offsets[1], v.saturation, dark ? 54 : 50, v.gradient === 'none' ? 0 : (0.035 + v.intensity / 450));
-    const c = hsla(surfaceHue + offsets[2], Math.max(35, v.saturation - 8), dark ? 62 : 44, v.gradient === 'none' ? 0 : (0.03 + v.intensity / 500));
-    const surfaceSaturation = Math.min(24, v.saturation * 0.22);
-    const darkBase = [7, 9, 12, 16];
-    const lightBase = [100, 97, 92, 86];
-    const base = dark ? darkBase : lightBase;
-    const surface = (lightness) => hsl(surfaceHue, surfaceSaturation, lightness);
-    const foreground = (lightness) => hsl(surfaceHue, 8, lightness);
-    return {
-      ...v,
-      '--theme-hue': String(v.hue),
-      '--theme-saturation': v.saturation + '%',
-      '--bg': surface(base[0]),
-      '--bg2': surface(base[1]),
-      '--bg3': surface(base[2]),
-      '--bg4': surface(base[3]),
-      '--line': surface(dark ? 23 : 82),
-      '--line-soft': surface(dark ? 17 : 89),
-      '--text': foreground(dark ? 94 : 12),
-      '--text-dim': hsl(surfaceHue, 5, dark ? 72 : 34),
-      '--text-faint': hsl(surfaceHue, 4, dark ? 58 : 43),
-      '--dim': hsl(surfaceHue, 5, dark ? 72 : 34),
-      '--shadow': dark ? 'rgba(0,0,0,.48)' : 'rgba(0,0,0,.18)',
+  const toHex = (rgb) => '#' + rgb.map((v) => clamp(Math.round(v), 0, 255).toString(16).padStart(2, '0')).join('');
+
+  // Mix two colours. Every derived surface in the catalog goes through here
+  // toward the theme's own ink, which is why light and dark themes can share
+  // one ramp recipe: on a dark theme the ink is light and surfaces rise, on a
+  // light theme it is the reverse.
+  function mix(from, to, amount) {
+    const a = parseHex(from);
+    const b = parseHex(to);
+    const t = clamp(amount, 0, 1, 0);
+    return toHex([
+      a[0] + (b[0] - a[0]) * t,
+      a[1] + (b[1] - a[1]) * t,
+      a[2] + (b[2] - a[2]) * t
+    ]);
+  }
+
+  const alpha = (color, value) => {
+    const rgb = parseHex(color);
+    return `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${clamp(value, 0, 1, 0).toFixed(3)})`;
+  };
+
+  // WCAG relative luminance, exposed so tests can hold every preset to a real
+  // contrast minimum instead of trusting that the hexes look fine.
+  function luminance(color) {
+    const channel = (raw) => {
+      const c = raw / 255;
+      return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    };
+    const rgb = parseHex(color);
+    return 0.2126 * channel(rgb[0]) + 0.7152 * channel(rgb[1]) + 0.0722 * channel(rgb[2]);
+  }
+
+  function contrast(foreground, background) {
+    const a = luminance(foreground);
+    const b = luminance(background);
+    return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  }
+
+  const isHex = (value) => /^#(?:[\da-f]{3}|[\da-f]{6})$/i.test(String(value || '').trim());
+
+  // ---- texture overlays ---------------------------------------------------
+  // Textures are the one "Chrome gallery" idea worth copying without shipping
+  // a single image file: a repeating gradient layered over the frame colour.
+  // Each value is a complete background layer - image *and* size - so it can be
+  // joined into one `background` shorthand. The explicit size matters: the
+  // chrome animates background-size for its motion themes, which would
+  // otherwise stretch the texture along with it.
+  const FULL = ' / 100% 100%';
+  const PATTERNS = {
+    none: null,
+    grain: `repeating-linear-gradient(115deg, rgba(255,255,255,.045) 0 1px, rgba(0,0,0,.05) 1px 3px)${FULL}`,
+    weave: `repeating-linear-gradient(0deg, rgba(255,255,255,.05) 0 1px, transparent 1px 4px)${FULL}, repeating-linear-gradient(90deg, rgba(0,0,0,.07) 0 1px, transparent 1px 4px)${FULL}`,
+    grid: `repeating-linear-gradient(0deg, rgba(255,255,255,.055) 0 1px, transparent 1px 24px)${FULL}, repeating-linear-gradient(90deg, rgba(255,255,255,.055) 0 1px, transparent 1px 24px)${FULL}`,
+    lattice: `repeating-linear-gradient(60deg, rgba(255,255,255,.05) 0 1px, transparent 1px 11px)${FULL}, repeating-linear-gradient(-60deg, rgba(255,255,255,.05) 0 1px, transparent 1px 11px)${FULL}`,
+    scan: `repeating-linear-gradient(0deg, rgba(0,0,0,.22) 0 1px, transparent 1px 3px)${FULL}`,
+    brush: `repeating-linear-gradient(100deg, rgba(255,255,255,.05) 0 2px, rgba(0,0,0,.06) 2px 5px)${FULL}`,
+    carbon: `repeating-linear-gradient(45deg, rgba(255,255,255,.035) 0 2px, transparent 2px 5px)${FULL}, repeating-linear-gradient(-45deg, rgba(0,0,0,.06) 0 2px, transparent 2px 5px)${FULL}`,
+    marble: `radial-gradient(130% 90% at 18% -10%, rgba(255,255,255,.12), transparent 55%)${FULL}, radial-gradient(90% 70% at 85% 110%, rgba(0,0,0,.16), transparent 60%)${FULL}`,
+    speck: 'radial-gradient(rgba(255,255,255,.11) 1.2px, transparent 1.4px) 0 0 / 15px 15px, radial-gradient(rgba(0,0,0,.09) 1.2px, transparent 1.4px) 7px 8px / 15px 15px'
+  };
+
+  // Motion is now a property of a theme rather than a random switch: only the
+  // themes whose artwork implies movement (aurora, neon, scanlines) animate.
+  const MOTION_DURATIONS = {
+    none: '0s', shimmer: '9s', drift: '15s', breathe: '11s', pulse: '7s', wave: '17s'
+  };
+  const MOTIONS = Object.keys(MOTION_DURATIONS);
+
+  const CATEGORIES = [
+    { id: 'default', name: 'Default' },
+    { id: 'solid', name: 'Solid colours' },
+    { id: 'developer', name: 'Developer classics' },
+    { id: 'light', name: 'Light and paper' },
+    { id: 'nature', name: 'Landscapes' },
+    { id: 'textures', name: 'Textures' },
+    { id: 'earth', name: 'Earth tones' },
+    { id: 'vivid', name: 'Vivid and neon' },
+    { id: 'pastel', name: 'Pastel and soft' },
+    { id: 'retro', name: 'Retro and arcade' },
+    { id: 'cinematic', name: 'Cinematic' },
+    { id: 'monochrome', name: 'Monochrome' }
+  ];
+
+  const DEFAULT_PRESET = 'prism-dark';
+
+  // ---- authoring helpers --------------------------------------------------
+  // Compact on purpose: a theme is four colours and a couple of switches, and
+  // the ramp is derived. Spelling out 15 CSS variables per theme is how
+  // catalogs drift out of sync with each other.
+  function preset(id, name, category, dark, bg, ink, accent, chrome, extra) {
+    const stops = Array.isArray(chrome) ? chrome.slice() : [chrome];
+    return Object.assign({
+      id,
+      name,
+      category,
+      dark: Boolean(dark),
+      bg,
+      ink,
+      accent,
+      chrome: stops.length > 1 ? stops : null,   // null means a flat solid frame
+      solid: stops.length > 1 ? null : stops[0],
+      angle: 110,
+      motion: 'none',
+      pattern: 'none'
+    }, extra || {});
+  }
+
+  // "Solid colours" is literally one colour: derive a tinted paper and a deep
+  // ink from the same hue so the page and the frame always belong together.
+  const solid = (id, name, color) => preset(
+    id, name, 'solid', false,
+    mix(color, '#ffffff', 0.945), mix(color, '#0b0d10', 0.88), color, color
+  );
+
+  // ---- the catalog --------------------------------------------------------
+
+  const PRESETS = [
+    // Default — Prism's own four looks, tuned to be legible first.
+    preset('prism-dark', 'Prism Dark', 'default', true, '#14161c', '#f2f5f9', '#7aa2f7', ['#1d2230', '#14161c', '#262d3f'], { motion: 'shimmer' }),
+    preset('prism-light', 'Prism Light', 'default', false, '#f6f7f9', '#16181d', '#2f6bff', ['#ffffff', '#f2f4f8', '#e8ecf3']),
+    preset('prism-midnight', 'Prism Midnight', 'default', true, '#0b0d12', '#e6ebf5', '#5eead4', ['#0f141c', '#0b0d12', '#141b26'], { motion: 'drift' }),
+    preset('prism-dusk', 'Prism Dusk', 'default', true, '#191a24', '#eceaf6', '#b39dfb', ['#232437', '#191a24', '#2d2c45'], { motion: 'breathe' }),
+    preset('prism-noir', 'Prism Noir', 'default', true, '#0a0a0a', '#fafafa', '#d7d7dc', ['#141414', '#0a0a0a', '#1f1f1f']),
+    preset('prism-daylight', 'Prism Daylight', 'default', false, '#f2f4f7', '#1a1d23', '#0f766e', ['#fbfcfd', '#eef1f5', '#e0e5ec']),
+    preset('prism-warm', 'Prism Warm', 'default', true, '#1a1512', '#f5ece4', '#e8a05c', ['#241d18', '#1a1512', '#302620']),
+    preset('prism-cool', 'Prism Cool', 'default', true, '#111519', '#e9f0f5', '#6fb3d9', ['#1a2128', '#111519', '#232c35'], { angle: 120 }),
+    // Maximum-contrast pair for users who need the browser to be as plain as
+    // possible; still a real theme rather than an accessibility afterthought.
+    preset('prism-contrast-dark', 'Prism Contrast Dark', 'default', true, '#000000', '#ffffff', '#ffdd33', '#000000'),
+    preset('prism-contrast-light', 'Prism Contrast Light', 'default', false, '#ffffff', '#000000', '#0b3ea8', '#ffffff'),
+
+    // Solid colours — flat frames, tinted pages, no gradients at all.
+    solid('solid-blue', 'Blue', '#2563eb'),
+    solid('solid-teal', 'Teal', '#0d9488'),
+    solid('solid-green', 'Green', '#16a34a'),
+    solid('solid-olive', 'Olive', '#65a30d'),
+    solid('solid-amber', 'Amber', '#ca8a04'),
+    solid('solid-orange', 'Orange', '#ea580c'),
+    solid('solid-red', 'Red', '#dc2626'),
+    solid('solid-rose', 'Rose', '#e11d48'),
+    solid('solid-pink', 'Pink', '#db2777'),
+    solid('solid-purple', 'Purple', '#7c3aed'),
+    solid('solid-indigo', 'Indigo', '#4f46e5'),
+    solid('solid-slate', 'Slate', '#475569'),
+
+    // Developer classics — real design systems, with their published values.
+    preset('nord', 'Nord', 'developer', true, '#2e3440', '#eceff4', '#88c0d0', ['#3b4252', '#2e3440', '#434c5e'], { angle: 105 }),
+    preset('catppuccin-mocha', 'Catppuccin Mocha', 'developer', true, '#1e1e2e', '#cdd6f4', '#cba6f7', ['#313244', '#1e1e2e', '#45475a'], { angle: 120 }),
+    preset('dracula', 'Dracula', 'developer', true, '#282a36', '#f8f8f2', '#bd93f9', ['#343746', '#282a36', '#44475a']),
+    preset('tokyo-night', 'Tokyo Night', 'developer', true, '#1a1b26', '#c0caf5', '#7aa2f7', ['#24283b', '#1a1b26', '#2f3449'], { angle: 100 }),
+    preset('gruvbox-dark', 'Gruvbox Dark', 'developer', true, '#282828', '#ebdbb2', '#fabd2f', ['#3c3836', '#282828', '#504945'], { angle: 115 }),
+    preset('one-dark', 'One Dark', 'developer', true, '#282c34', '#abb2bf', '#61afef', ['#21252b', '#282c34', '#3e4451'], { angle: 95 }),
+    preset('rose-pine', 'Rosé Pine', 'developer', true, '#191724', '#e0def4', '#ebbcba', ['#26233a', '#191724', '#403d52']),
+    preset('ayu-mirage', 'Ayu Mirage', 'developer', true, '#1f2430', '#e6e1cf', '#ffcc66', ['#1a1f29', '#1f2430', '#2c313d'], { angle: 125 }),
+    preset('kanagawa', 'Kanagawa', 'developer', true, '#1f1f28', '#dcd7ba', '#7e9cd8', ['#2a2a37', '#1f1f28', '#363646']),
+    preset('zenburn', 'Zenburn', 'developer', true, '#363636', '#dcdccc', '#7f9fcf', ['#4e4e4e', '#363636', '#5f5f5f'], { angle: 110, pattern: 'grain' }),
+
+    // Light and paper — reading-first palettes.
+    preset('catppuccin-latte', 'Catppuccin Latte', 'light', false, '#eff1f5', '#4c4f69', '#8839ef', ['#e6e9ef', '#eff1f5', '#dce0e8'], { angle: 120 }),
+    preset('solarized-light', 'Solarized Light', 'light', false, '#fdf6e3', '#586e75', '#268bd2', ['#f4ecd8', '#fdf6e3', '#eee8d5']),
+    // GitHub's page is pure white; the one-off value here keeps it distinct
+    // from the maximum-contrast light theme, which must stay #ffffff.
+    preset('github-light', 'GitHub Light', 'light', false, '#fcfcfd', '#24292f', '#0969da', ['#f6f8fa', '#ffffff', '#eaeef2'], { angle: 100 }),
+    preset('rose-pine-dawn', 'Rosé Pine Dawn', 'light', false, '#faf4ed', '#575279', '#eb6f92', ['#fffaf3', '#faf4ed', '#f2e9e1']),
+    preset('gruvbox-light', 'Gruvbox Light', 'light', false, '#fbf1c7', '#3c3836', '#79740e', ['#f2e5bc', '#fbf1c7', '#ebdbb2'], { angle: 115 }),
+    preset('vitesse-light', 'Vitesse Light', 'light', false, '#fdfdfc', '#393a34', '#1c6b48', ['#f7f7f5', '#fdfdfc', '#ededec'], { angle: 100 }),
+    preset('snazzy-light', 'Snazzy Light', 'light', false, '#f7f7f7', '#49483e', '#ff5c57', ['#ffffff', '#f7f7f7', '#eeece8'], { angle: 120 }),
+    preset('one-light', 'One Light', 'light', false, '#fafafa', '#383a42', '#4078f2', ['#ffffff', '#fafafa', '#eaeaeb'], { angle: 100 }),
+    preset('atelier-plateau', 'Atelier Plateau', 'light', false, '#fff1e5', '#4f424c', '#c46c70', ['#fff7ed', '#fff1e5', '#ffe9d6']),
+    preset('paper', 'Paper', 'light', false, '#fdfcf9', '#1a1a1a', '#0b7285', ['#ffffff', '#f6f5f0', '#eae8e1'], { pattern: 'grain' }),
+
+    // Landscapes — frames coloured like places.
+    preset('forest', 'Forest', 'nature', true, '#14201a', '#e8f2ea', '#7bd88f', ['#1b2c22', '#14201a', '#24402f'], { angle: 120 }),
+    preset('ocean', 'Ocean', 'nature', true, '#0c1c2b', '#e6f1f8', '#57c4e5', ['#123049', '#0c1c2b', '#1a4463'], { angle: 115, motion: 'drift' }),
+    preset('desert', 'Desert', 'nature', true, '#241a12', '#f6ecdd', '#e0a35c', ['#33251a', '#241a12', '#453322'], { angle: 110 }),
+    preset('glacier', 'Glacier', 'nature', true, '#101c24', '#e8f4fa', '#8fd4ee', ['#182b36', '#101c24', '#22404f'], { angle: 120 }),
+    preset('aurora-fields', 'Aurora Fields', 'nature', true, '#0d1a1e', '#e4f6f2', '#6ee7b7', ['#12262b', '#0d1a1e', '#1c3b41'], { angle: 115, motion: 'drift' }),
+    preset('mountain', 'Mountain', 'nature', true, '#1a1a1c', '#ececec', '#b0b7c3', ['#252528', '#1a1a1c', '#33333a'], { angle: 125 }),
+    preset('meadow', 'Meadow', 'nature', true, '#16200f', '#eef5e2', '#a3d977', ['#1f2d16', '#16200f', '#2b3d1f'], { angle: 115 }),
+    preset('lagoon', 'Lagoon', 'nature', true, '#0b2226', '#e0f4f2', '#4fd1c5', ['#12333a', '#0b2226', '#1a4a52'], { angle: 120, motion: 'breathe' }),
+    preset('sunset-ridge', 'Sunset Ridge', 'nature', true, '#221420', '#f8e7f0', '#ff9e6b', ['#301c2c', '#221420', '#432a3d'], { angle: 110, motion: 'breathe' }),
+    preset('rainforest', 'Rainforest', 'nature', true, '#0c1f14', '#e4f5e6', '#58c98a', ['#122c1d', '#0c1f14', '#1b4029'], { angle: 125 }),
+
+    // Textures — flat frames with a repeating overlay instead of artwork.
+    preset('concrete', 'Concrete', 'textures', true, '#16181a', '#eceeee', '#9aa3ab', '#26292c', { pattern: 'grain' }),
+    preset('sandstone', 'Sandstone', 'textures', false, '#efe3d2', '#3b3227', '#b4793f', '#e2d0b6', { pattern: 'grain' }),
+    preset('linen', 'Linen', 'textures', false, '#f4f1ea', '#33302a', '#9a8f7a', '#ebe7dd', { pattern: 'weave' }),
+    preset('slate-tiles', 'Slate Tiles', 'textures', true, '#131519', '#e9edf2', '#7f8ea3', '#1d2129', { pattern: 'lattice' }),
+    preset('brushed-metal', 'Brushed Metal', 'textures', true, '#1a1c1f', '#eceef1', '#9aa5b1', '#24282d', { pattern: 'brush' }),
+    preset('carbon', 'Carbon', 'textures', true, '#0d0d0f', '#f0f0f2', '#ff6b5b', '#151517', { pattern: 'carbon' }),
+    preset('marble-light', 'Marble Light', 'textures', false, '#f7f7f5', '#26282b', '#4f6d7a', '#eeeeec', { pattern: 'marble' }),
+    preset('marble-dark', 'Marble Dark', 'textures', true, '#14151a', '#eef0f4', '#96a0b0', '#1d1f26', { pattern: 'marble' }),
+    preset('terrazzo', 'Terrazzo', 'textures', false, '#f6f1ea', '#33302c', '#c0567a', '#e9e1d6', { pattern: 'speck' }),
+    preset('woven-dark', 'Woven Dark', 'textures', true, '#12141a', '#e7e9ef', '#7f9cc4', '#1b1e26', { pattern: 'weave' }),
+
+    // Earth tones — minerals, soil and clay.
+    preset('basalt', 'Basalt', 'earth', true, '#17181a', '#eceae6', '#8c8578', '#232425', { pattern: 'grain' }),
+    preset('loam', 'Loam', 'earth', true, '#1e1a14', '#f0e8da', '#b58963', '#2b2419', { pattern: 'grain' }),
+    preset('moss', 'Moss', 'earth', true, '#141a11', '#e9f0e2', '#8fae5f', ['#1f2718', '#141a11', '#2b3520'], { angle: 115 }),
+    preset('claybank', 'Claybank', 'earth', true, '#221a15', '#f3e8dd', '#d08c60', ['#31251d', '#221a15', '#403126'], { angle: 110 }),
+    preset('pumice', 'Pumice', 'earth', true, '#1e1d1b', '#f0eee9', '#b0a894', '#2b2a27', { pattern: 'grain' }),
+    preset('dune', 'Dune', 'earth', true, '#1f1a12', '#f6ecd8', '#dcb26a', ['#2c2418', '#1f1a12', '#3b3020'], { angle: 115 }),
+    preset('tundra', 'Tundra', 'earth', true, '#15171a', '#eef1f4', '#93b0c9', '#212529'),
+    preset('peat', 'Peat', 'earth', true, '#16120f', '#ece5db', '#a07b56', '#211a15', { pattern: 'grain' }),
+    preset('shale', 'Shale', 'earth', true, '#14161a', '#e9ecf1', '#7e8aa0', ['#1f232a', '#14161a', '#2b313b'], { angle: 120 }),
+    preset('terracotta', 'Terracotta', 'earth', true, '#20140f', '#f7e8dd', '#e0785a', '#2f1d15', { pattern: 'grain' }),
+
+    // Vivid and neon — the themes that are allowed to be loud.
+    preset('neon-grid', 'Neon Grid', 'vivid', true, '#0a0714', '#f2e9ff', '#ff2ec4', ['#160b2a', '#0a0714', '#241248'], { angle: 115, pattern: 'grid', motion: 'shimmer' }),
+    preset('synth-city', 'Synth City', 'vivid', true, '#140a2b', '#ffe9ff', '#ff4ecd', ['#1f0d45', '#140a2b', '#2e1560'], { angle: 120, motion: 'shimmer' }),
+    preset('candy-pop', 'Candy Pop', 'vivid', true, '#1a0f1c', '#ffeef8', '#ff5fa2', ['#2a1428', '#1a0f1c', '#3d1d3a'], { angle: 110 }),
+    preset('watermelon', 'Watermelon', 'vivid', true, '#12200f', '#eafbe8', '#ff4d6d', ['#1b3316', '#12200f', '#26481e'], { angle: 120 }),
+    preset('sorbet', 'Sorbet', 'vivid', true, '#1c1524', '#f6ecfb', '#c77dff', ['#291d36', '#1c1524', '#3a294b'], { angle: 115 }),
+    preset('electric', 'Electric', 'vivid', true, '#07131c', '#e6f6ff', '#00d4ff', ['#0d2233', '#07131c', '#12314a'], { angle: 100, motion: 'shimmer' }),
+    preset('bubblegum', 'Bubblegum', 'vivid', true, '#1b0f18', '#ffe9f4', '#ff8ad4', ['#2a1726', '#1b0f18', '#3d2136'], { angle: 115 }),
+    preset('carnival', 'Carnival', 'vivid', true, '#1a0f08', '#ffeee0', '#ff7a1a', ['#2b1a0e', '#1a0f08', '#40270f'], { angle: 110 }),
+    preset('prism-spectra', 'Spectra', 'vivid', true, '#0f0f14', '#f4f4f8', '#a78bfa', ['#1c1c28', '#0f0f14', '#2a2a3d'], { angle: 125, motion: 'wave' }),
+    preset('neon-nights', 'Neon Nights', 'vivid', true, '#08060f', '#eae6ff', '#8b5cf6', ['#120e22', '#08060f', '#1d1736'], { angle: 115, motion: 'drift' }),
+    preset('disco', 'Disco', 'vivid', true, '#150a1e', '#ffeaff', '#ff6ec7', ['#231129', '#150a1e', '#341a41'], { angle: 120, motion: 'pulse' }),
+    preset('ultraviolet', 'Ultraviolet', 'vivid', true, '#0b0616', '#f0e6ff', '#b026ff', ['#150c26', '#0b0616', '#211138'], { angle: 115, motion: 'shimmer' }),
+
+    // Pastel and soft.
+    preset('sage', 'Sage', 'pastel', false, '#eef2ea', '#2f3a2c', '#7fa07a', ['#f7faf4', '#eef2ea', '#e3e9dd'], { angle: 120 }),
+    preset('blush', 'Blush', 'pastel', false, '#fdeef1', '#4a2b34', '#e2728f', ['#fff7f9', '#fdeef1', '#f7e0e6']),
+    preset('powder', 'Powder', 'pastel', false, '#eaf1f8', '#28374a', '#5b87c4', ['#f6fafe', '#eaf1f8', '#dde8f2'], { angle: 115 }),
+    preset('peach', 'Peach', 'pastel', false, '#fdeee3', '#4a342a', '#ef9a6a', ['#fff8f3', '#fdeee3', '#f7e2d1']),
+    preset('lilac', 'Lilac', 'pastel', false, '#f0ecf8', '#372f4a', '#8b72c9', ['#f9f7fd', '#f0ecf8', '#e4def2'], { angle: 120 }),
+    preset('mint', 'Mint', 'pastel', false, '#e6f5ee', '#254037', '#4fae8b', ['#f4fcf8', '#e6f5ee', '#d8ebe1'], { angle: 115 }),
+    preset('butter', 'Butter', 'pastel', false, '#fbf6e2', '#453d22', '#c9a227', ['#fffdf4', '#fbf6e2', '#f2ecd4']),
+    preset('rose-water', 'Rose Water', 'pastel', false, '#f6eef7', '#3f2b45', '#a86fb0', ['#fdf8fe', '#f6eef7', '#ebe0ec'], { angle: 120 }),
+    preset('fog', 'Fog', 'pastel', false, '#eceff1', '#2e3438', '#7d8b93', ['#f7f9fa', '#eceff1', '#e0e5e8']),
+    preset('meadow-light', 'Meadow Light', 'pastel', false, '#eef5e8', '#31402a', '#84b366', ['#f8fbf5', '#eef5e8', '#e2ecda'], { angle: 120 }),
+
+    // Retro and arcade — CRT, tape and 8-bit.
+    preset('vhs', 'VHS', 'retro', true, '#1a1620', '#ffeaf2', '#ff4d6d', '#251d2c', { pattern: 'scan' }),
+    preset('terminal-green', 'Terminal Green', 'retro', true, '#04120a', '#c8ffd0', '#33ff66', '#062012', { pattern: 'scan' }),
+    preset('amber-crt', 'Amber CRT', 'retro', true, '#150f04', '#ffcf6b', '#ffab1f', '#221806', { pattern: 'scan' }),
+    preset('sepia', 'Sepia', 'retro', false, '#f3e9d8', '#3d3222', '#a5703c', '#fbf4e6', { pattern: 'grain' }),
+    preset('commodore', 'Commodore', 'retro', true, '#101024', '#c8c8e8', '#9a7fe0', '#191934', { pattern: 'scan' }),
+    preset('gameboy', 'Game Boy', 'retro', false, '#a8bb92', '#141a09', '#3d5a1f', '#b0c39c', { pattern: 'grain' }),
+    preset('cassette', 'Cassette', 'retro', true, '#191720', '#efe7dc', '#e08a3c', '#252231', { pattern: 'grain' }),
+    preset('newspaper', 'Newspaper', 'retro', false, '#f4f2ed', '#1d1d1b', '#333333', '#fbfaf7', { pattern: 'grain' }),
+    preset('blueprint', 'Blueprint', 'retro', true, '#0d2742', '#d8ecff', '#7cc0ff', ['#123456', '#0d2742', '#1a4570'], { pattern: 'grid', angle: 135 }),
+    preset('arcade', 'Arcade', 'retro', true, '#0b0a14', '#f2e9ff', '#ffd23f', ['#16142a', '#0b0a14', '#231f42'], { angle: 115, motion: 'pulse' }),
+
+    // Cinematic — colour-graded sets.
+    preset('teal-orange', 'Teal and Orange', 'cinematic', true, '#0f1416', '#f0ece7', '#ff9b54', ['#1b2226', '#0f1416', '#263236'], { angle: 115 }),
+    preset('midnight-city', 'Midnight City', 'cinematic', true, '#0c0e14', '#e7e9f0', '#5f8cff', ['#151925', '#0c0e14', '#1f2436'], { angle: 120 }),
+    preset('golden-hour', 'Golden Hour', 'cinematic', true, '#1a1409', '#f8efdd', '#f2b544', ['#28200f', '#1a1409', '#3a2e16'], { angle: 110, motion: 'breathe' }),
+    preset('noir', 'Noir', 'cinematic', true, '#08080a', '#f2f2f4', '#d4d4d8', ['#131316', '#08080a', '#1c1c20'], { angle: 115 }),
+    preset('neon-noir', 'Neon Noir', 'cinematic', true, '#0a0a12', '#eae8f6', '#ff2d78', ['#151526', '#0a0a12', '#202036'], { angle: 115, motion: 'shimmer' }),
+    preset('cyber-noir', 'Cyber Noir', 'cinematic', true, '#08111a', '#e6f1f8', '#00e5c0', ['#0f1f2c', '#08111a', '#163244'], { angle: 100, motion: 'drift' }),
+    preset('moody-forest', 'Moody Forest', 'cinematic', true, '#10160f', '#e9f0e4', '#9ec46a', ['#1a2318', '#10160f', '#263322'], { angle: 125 }),
+    preset('cold-desert', 'Cold Desert', 'cinematic', true, '#161412', '#f1ece4', '#d9a066', ['#221e19', '#161412', '#2f2a23'], { angle: 115 }),
+    preset('monochrome-film', 'Monochrome Film', 'cinematic', true, '#131313', '#f0f0f0', '#9a9a9a', ['#1e1e1e', '#131313', '#2a2a2a'], { pattern: 'grain' }),
+    preset('deep-space', 'Deep Space', 'cinematic', true, '#070a12', '#e4ecff', '#6ea8ff', ['#101828', '#070a12', '#1a2740'], { angle: 120, motion: 'drift' }),
+
+    // Monochrome — value only, no hue in the frame at all.
+    preset('graphite', 'Graphite', 'monochrome', true, '#1a1a1a', '#f5f5f5', '#e0e0e0', '#262626'),
+    preset('silver', 'Silver', 'monochrome', false, '#f2f2f2', '#1a1a1a', '#3a3a3a', '#ffffff'),
+    preset('ink', 'Ink', 'monochrome', true, '#0f0f10', '#fafafa', '#c8c8c8', '#1a1a1c'),
+    preset('slate-mono', 'Slate Mono', 'monochrome', true, '#16181c', '#eceef2', '#b6bcc6', '#212429', { pattern: 'grain' }),
+    preset('charcoal', 'Charcoal', 'monochrome', true, '#232323', '#f0f0f0', '#bdbdbd', '#2e2e2e'),
+    preset('pearl', 'Pearl', 'monochrome', false, '#f6f6f6', '#1c1c1c', '#5a5a5a', '#fbfbfb'),
+    preset('ash', 'Ash', 'monochrome', true, '#1b1d1f', '#eef0f1', '#a8aeb2', '#252829', { pattern: 'grain' }),
+    preset('platinum', 'Platinum', 'monochrome', false, '#f4f5f6', '#202225', '#6b7175', '#ffffff'),
+    preset('smoke', 'Smoke', 'monochrome', true, '#131416', '#e9ebed', '#9aa0a6', '#1d1f22'),
+    preset('bone', 'Bone', 'monochrome', false, '#e9e6df', '#2a2723', '#6f6a61', '#f3f1ec', { pattern: 'grain' })
+  ].map(Object.freeze);
+
+  const BY_ID = new Map(PRESETS.map((item) => [item.id, item]));
+  const FROZEN_PRESETS = Object.freeze(PRESETS);
+  const FROZEN_CATEGORIES = Object.freeze(CATEGORIES.map((category) => Object.freeze(category)));
+
+  // ---- resolution ---------------------------------------------------------
+
+  // Ramp steps, shared by every theme. Surfaces rise toward the ink on dark
+  // themes and sink toward it on light ones, so one recipe covers both.
+  const SURFACE_STEPS = {
+    bg2: 0.035,
+    bg3: 0.07,
+    bg4: 0.105,
+    'line-soft': 0.085,
+    line: 0.17
+  };
+  // Muted text pulls back toward the background rather than toward the ink, so
+  // dim text stays dim in both modes. Pastel themes are the reason this is a
+  // search and not a constant: mixing a soft ink toward a near-white page
+  // quickly lands below readable contrast, so the ramp walks toward the
+  // background only as far as the legibility floor allows.
+  const MUTED_FLOOR = { dim: 4.5, faint: 3 };
+
+  function mutedToward(ink, background, minContrast) {
+    let amount = 0;
+    while (amount < 0.6) {
+      const next = mix(ink, background, amount + 0.01);
+      if (contrast(next, background) < minContrast) break;
+      amount += 0.01;
+    }
+    return mix(ink, background, amount);
+  }
+
+  // Accents are the other half of the problem: a pastel accent on a pastel
+  // page is decoration, not an affordance. Walk the accent away from its own
+  // background until it can carry interface text, keeping the hue as long as
+  // possible.
+  function ensureContrast(color, background, min) {
+    if (contrast(color, background) >= min) return color;
+    // Pick the direction that can actually reach the target. Comparing the
+    // colour's own luminance to the background's picks black for a mid-tone
+    // accent on itself, where white is the only reachable answer.
+    const towards = contrast('#ffffff', background) >= contrast('#000000', background) ? '#ffffff' : '#000000';
+    let result = color;
+    for (let step = 0.02; step <= 1; step += 0.02) {
+      result = mix(color, towards, step);
+      if (contrast(result, background) >= min) return result;
+    }
+    return towards;
+  }
+
+  // Average per-channel distance, used where WCAG contrast is the wrong tool:
+  // an active tab only has to be *visibly* raised from the frame behind it,
+  // which is a channel-space judgement, not a text-legibility one.
+  function channelDrift(from, to) {
+    const a = parseHex(from);
+    const b = parseHex(to);
+    return (Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2])) / 3;
+  }
+
+  // Walk a surface away from its neighbour until the step is actually visible,
+  // so themes with a narrow ink-to-background range (Gruvbox, Solarized) do
+  // not end up with an active tab that is indistinguishable from the frame.
+  function raised(base, towards, minDrift) {
+    let result = base;
+    for (let step = 0.04; step <= 0.6; step += 0.02) {
+      result = mix(base, towards, step);
+      if (channelDrift(base, result) >= minDrift) return result;
+    }
+    return towards;
+  }
+
+  // Solid-colour frames are saturated by definition, so the theme's own ink
+  // often cannot sit on them. Fall back to plain paper white or near-black —
+  // whichever contrasts more — rather than shipping a toolbar nobody can read.
+  const INK_LIGHT = '#ffffff';
+  const INK_DARK = '#0b0d10';
+
+  function frameInk(ink, frame) {
+    if (contrast(ink, frame) >= 4.5) return ink;
+    return contrast(INK_LIGHT, frame) >= contrast(INK_DARK, frame) ? INK_LIGHT : INK_DARK;
+  }
+
+  function presetById(id) {
+    if (typeof id !== 'string') return null;
+    const found = BY_ID.get(id);
+    if (found) return found;
+    return BY_ID.get(DEFAULT_PRESET);
+  }
+
+  function resolve(input) {
+    const p = typeof input === 'string' ? presetById(input) : (input || presetById(DEFAULT_PRESET));
+    const source = p && p.id ? p : presetById(DEFAULT_PRESET);
+    const ink = source.ink;
+    const bg = source.bg;
+    const surface = (amount) => mix(bg, ink, amount);
+    const frameBase = source.chrome ? source.chrome[0] : source.solid;
+    const frameLast = source.chrome ? source.chrome[source.chrome.length - 1] : source.solid;
+    const frameAccent = source.chrome && source.chrome[1] ? source.chrome[1] : frameBase;
+    const pattern = PATTERNS[source.pattern] || null;
+    // Everything below is derived *with legibility as a constraint*, so a
+    // hand-picked pastel accent cannot produce an unreadable UI.
+    const dim = mutedToward(ink, bg, MUTED_FLOOR.dim);
+    const faint = mutedToward(ink, bg, MUTED_FLOOR.faint);
+    const accent = ensureContrast(source.accent, bg, 3);
+    // A solid-colour theme paints its frame *in* the accent, so the page accent
+    // and the frame need different treatments: no single colour can carry 3:1
+    // against both a near-white page and a saturated frame. Hence two tokens.
+    const chromeAccent = ensureContrast(accent, frameBase, 3);
+    const chromeText = frameInk(ink, frameBase);
+    // First background layer paints on top, so the texture goes before the
+    // gradient and the gradient before the flat colour.
+    const layers = [];
+    if (pattern) layers.push(pattern);
+    if (source.chrome) layers.push(`linear-gradient(${source.angle}deg, ${source.chrome.join(', ')})`);
+    const vars = {
+      '--bg': bg,
+      '--bg2': surface(SURFACE_STEPS.bg2),
+      '--bg3': surface(SURFACE_STEPS.bg3),
+      '--bg4': surface(SURFACE_STEPS.bg4),
+      '--line-soft': surface(SURFACE_STEPS['line-soft']),
+      '--line': surface(SURFACE_STEPS.line),
+      '--text': ink,
+      '--text-dim': dim,
+      '--text-faint': faint,
+      '--dim': dim,
+      '--shadow': source.dark ? 'rgba(0,0,0,.48)' : 'rgba(0,0,0,.18)',
       '--accent': accent,
-      '--accent-soft': hsla(v.hue, v.saturation, dark ? 65 : 42, dark ? 0.18 : 0.12),
-      '--gradient-a': a,
-      '--gradient-b': b,
-      '--gradient-c': c,
-      '--chrome-gradient': v.gradient === 'none' ? 'none' : `linear-gradient(${105 + (v.hue % 115)}deg, ${a}, ${b}, ${c})`,
-      '--page-gradient': v.gradient === 'none' ? 'none' : `radial-gradient(ellipse at 12% 0%, ${a}, transparent 48%), radial-gradient(ellipse at 90% 10%, ${c}, transparent 46%)`,
-      '--gradient-angle': (105 + (v.hue % 115)) + 'deg',
-      '--gradient-text': dark ? '#ffffff' : '#141414',
-      '--motion-duration': (8.5 - (v.intensity * 0.055)).toFixed(2) + 's',
-      '--motion-opacity': (v.intensity / 100).toFixed(2)
+      '--accent-soft': alpha(accent, source.dark ? 0.2 : 0.14),
+      // Chrome frame. --chrome-color is the flat fallback, --chrome-bg is the
+      // full background shorthand so textures and gradients compose in one go.
+      '--chrome-color': frameBase,
+      '--chrome-active': raised(frameBase, chromeText, 9),
+      '--chrome-line': mix(frameLast, ink, 0.2),
+      // Text drawn on the frame itself, which for solid-colour themes is not
+      // the theme ink. Kept as its own pair so the shell can label a saturated
+      // frame without tinting the rest of the browser to match.
+      '--chrome-ink': chromeText,
+      '--chrome-ink-dim': mutedToward(chromeText, frameBase, 3),
+      '--chrome-accent': chromeAccent,
+      '--chrome-gradient': source.chrome ? `linear-gradient(${source.angle}deg, ${source.chrome.join(', ')})` : 'none',
+      '--chrome-bg': layers.length ? layers.join(', ') : 'none',
+      // Small tab/omnibox washes that echo the frame without clashing with it.
+      '--gradient-a': alpha(frameBase, source.dark ? 0.55 : 0.4),
+      '--gradient-b': alpha(frameAccent, source.dark ? 0.35 : 0.22),
+      '--gradient-c': alpha(frameLast, source.dark ? 0.5 : 0.35),
+      '--page-gradient': `radial-gradient(130% 90% at 12% -12%, ${alpha(accent, source.dark ? 0.11 : 0.09)}, transparent 55%), radial-gradient(90% 80% at 92% 4%, ${alpha(frameLast, source.dark ? 0.12 : 0.07)}, transparent 52%)`,
+      '--motion-duration': MOTION_DURATIONS[source.motion] || MOTION_DURATIONS.none,
+      '--motion-opacity': '1'
+    };
+    return {
+      id: source.id,
+      name: source.name,
+      category: source.category,
+      dark: source.dark,
+      motion: source.motion,
+      pattern: source.pattern,
+      ink,
+      accent,
+      bg,
+      frame: frameBase,
+      swatch: source.chrome ? source.chrome.slice() : [source.solid, mix(source.solid, ink, 0.18)],
+      vars
     };
   }
 
   function apply(target, appearance) {
     if (!target) return;
     const a = appearance || {};
-    const visual = normalize(a.visualTheme);
+    const resolved = resolve(a.themePreset || DEFAULT_PRESET);
     const accessibility = a.accessibility || {};
-    const resolved = resolve(visual, a.theme || 'dark');
+    const vars = Object.assign({}, resolved.vars);
     if (accessibility.contrast === 'high') {
-      const highText = resolved['--text'];
-      resolved['--line'] = highText;
-      resolved['--line-soft'] = highText;
-      resolved['--text-dim'] = highText;
-      resolved['--text-faint'] = highText;
-      resolved['--dim'] = highText;
-      resolved['--accent-soft'] = hsla(0, 0, 50, 0.3);
+      // High contrast flattens the ramp: every muted value becomes the main
+      // ink and borders take the ink's full strength.
+      vars['--line'] = vars['--text'];
+      vars['--line-soft'] = vars['--text'];
+      vars['--text-dim'] = vars['--text'];
+      vars['--text-faint'] = vars['--text'];
+      vars['--dim'] = vars['--text'];
+      vars['--accent-soft'] = 'rgba(127,127,127,.3)';
+      vars['--chrome-line'] = vars['--text'];
     }
-    for (const [key, value] of Object.entries(resolved)) {
-      if (key.startsWith('--')) target.style.setProperty(key, value);
-    }
-    target.dataset.theme = a.theme || 'dark';
-    target.dataset.gradient = visual.gradient;
-    target.dataset.motion = visual.motion;
+    for (const [key, value] of Object.entries(vars)) target.style.setProperty(key, value);
+    target.dataset.theme = resolved.dark ? 'dark' : 'light';
+    target.dataset.themePreset = resolved.id;
+    target.dataset.motion = resolved.motion;
     target.dataset.contrast = accessibility.contrast === 'high' ? 'high' : 'normal';
     target.dataset.largeTargets = accessibility.largerTargets ? 'true' : 'false';
     target.dataset.focusVisible = accessibility.focusIndicators === false ? 'subtle' : 'strong';
@@ -108,39 +504,34 @@
     target.dataset.reduceMotion = reduce === 'reduce' ? 'reduce' : reduce === 'no-preference' ? 'allow' : 'system';
   }
 
-  function fromIndex(index) {
-    let n = Math.floor(clamp(index, 0, THEME_COUNT - 1, 0));
-    // Hue varies first so each visible gallery page is a colorful mix rather
-    // than dozens of nearby variations in the same color family.
-    const hue = n % 360; n = Math.floor(n / 360);
-    const saturation = SATURATIONS[n % SATURATIONS.length]; n = Math.floor(n / SATURATIONS.length);
-    const gradient = GRADIENTS[n % GRADIENTS.length]; n = Math.floor(n / GRADIENTS.length);
-    const motion = MOTIONS[n % MOTIONS.length];
-    return { hue, saturation, gradient, motion, intensity: 45 };
+  // "Surprise me" now jumps to another curated theme instead of inventing a
+  // gradient, so a random pick is still a palette somebody designed.
+  function randomPresetId(current) {
+    if (PRESETS.length < 2) return DEFAULT_PRESET;
+    let next = DEFAULT_PRESET;
+    while (next === current) next = PRESETS[Math.floor(Math.random() * PRESETS.length)].id;
+    return next;
   }
 
-  function random(previous) {
-    const old = normalize(previous);
-    const motions = MOTIONS.filter((m) => m !== old.motion);
-    const gradients = GRADIENTS.filter((g) => g !== old.gradient);
-    return {
-      hue: Math.floor(Math.random() * 360),
-      saturation: SATURATIONS[Math.floor(Math.random() * SATURATIONS.length)],
-      gradient: gradients[Math.floor(Math.random() * gradients.length)],
-      motion: motions[Math.floor(Math.random() * motions.length)],
-      intensity: 25 + Math.floor(Math.random() * 66)
-    };
+  function presetsIn(categoryId) {
+    return FROZEN_PRESETS.filter((item) => item.category === categoryId);
   }
 
   root.PrismTheme = Object.freeze({
-    GRADIENTS: Object.freeze(GRADIENTS.slice()),
+    PRESETS: FROZEN_PRESETS,
+    CATEGORIES: FROZEN_CATEGORIES,
+    PATTERNS: Object.freeze(Object.assign({}, PATTERNS)),
     MOTIONS: Object.freeze(MOTIONS.slice()),
-    SATURATIONS: Object.freeze(SATURATIONS.slice()),
-    THEME_COUNT,
-    normalize,
-    fromIndex,
+    DEFAULT_PRESET,
+    preset: presetById,
+    presetsIn,
     resolve,
     apply,
-    random
+    randomPresetId,
+    mix,
+    contrast,
+    channelDrift,
+    luminance,
+    isHex
   });
 })(window);
