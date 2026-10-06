@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('prismShell', {
 
   // Extensions, for the toolbar puzzle-piece dropdown.
   extensionsList: () => ipcRenderer.invoke('prism:extensions:list'),
+  extensionsOpenPopup: (wid, id, anchor) => ipcRenderer.invoke('prism:extensions:open-popup', { wid, id, anchor }),
   extensionsOpenPage: (source) => ipcRenderer.invoke('prism:extensions:open-page', { source }),
   onExtensionsChanged: (fn) => ipcRenderer.on('prism:extensions-changed', () => fn()),
 
@@ -90,6 +91,9 @@ contextBridge.exposeInMainWorld('prismShell', {
   aiCapture: () => ipcRenderer.invoke('prism:ai:capture'),
   aiVision: (image, task, input) => ipcRenderer.invoke('prism:ai:vision', { image, task, input }),
   aiSummarise: (style) => ipcRenderer.invoke('prism:ai:summarise', { style }),
+  aiTranslate: (wid, source, target) => ipcRenderer.invoke('prism:ai:translate', { wid, source, target }),
+  aiTranslationLanguages: () => ipcRenderer.invoke('prism:ai:translation-languages'),
+  securityCheckLocal: (wid) => ipcRenderer.invoke('prism:security:check-local', { wid }),
   aiClearCache: () => ipcRenderer.invoke('prism:ai:clear-cache'),
   onAiProgress: (fn) => ipcRenderer.on('prism:ai:progress', (_e, d) => fn(d)),
 

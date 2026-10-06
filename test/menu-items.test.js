@@ -133,6 +133,15 @@ const required = ['New tab', 'New window', 'New incognito window', 'Passwords an
   'Print…', 'Translate…', 'Find and edit', 'Cast, save and share', 'More tools', 'Help', 'Settings', 'Exit'];
 const notPresent = required.filter((label) => !allText.includes(label));
 check('all requested Chrome menu entries exist', notPresent.length === 0, 'missing: ' + notPresent.join(', '));
+const translateAction = menu.sections.flatMap((section) => section.items).find((item) => item.id === 'translate');
+check('translation opens the language picker instead of listing only one target',
+  !!translateAction && translateAction.action === 'translate' && !translateAction.submenu);
+check('the translation action calls the local model bridge, not Google Translate',
+  /aiTranslate\(WID, sourceLanguage, targetLanguage\)/.test(shellSrc) && !/translate\.google\.com/.test(shellSrc));
+check('the submenu uses a contiguous hover boundary with delayed close',
+  /pointerleave/.test(shellSrc) && /scheduleSubmenuClose\(\)/.test(shellSrc) && /const gap = 0/.test(shellSrc));
+check('updater offers to relaunch the same-version installer neutrally',
+  !/bug-fix build|bug fix build/i.test(shellSrc));
 
 // Internal pages the menu links to must actually be served by prism://.
 for (const page of ['clear', 'shortcuts']) {

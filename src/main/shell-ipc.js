@@ -227,6 +227,10 @@ function registerIpc(tabs) {
 
   // ---------- extensions ----------
   ipcMain.handle('prism:extensions:list', () => extensions.list());
+  ipcMain.handle('prism:extensions:open-popup', async (_e, { wid, id, anchor }) => {
+    try { return await extensions.openPopup(wid, id, tabs, anchor); }
+    catch (error) { return { error: (error && error.message) || 'Could not open extension popup.' }; }
+  });
   ipcMain.handle('prism:extensions:load-unpacked', async (e) => {
     try {
       const win = winOf(e);
@@ -274,6 +278,15 @@ function registerIpc(tabs) {
     const a = await adblock.refresh(true);
     const s = await security.refresh();
     return { adblock: a, security: s };
+  });
+  ipcMain.handle('prism:security:check-local', (e, { wid }) => {
+    const record = wid ? tabs.windowRecord(wid) : null;
+    if (wid && !record) return { error: 'The browser window is no longer available.' };
+    const url = record
+      ? record.active && tabs.tabs.get(record.active)?.url
+      : tabs.activeWebContents(activeWid(e))?.getURL();
+    if (!/^https?:/i.test(url || '')) return { error: 'Only website URLs can be checked.' };
+    return security.checkLocalUrl(url);
   });
 
   // ---------- clear browsing data ----------
@@ -524,6 +537,27 @@ try {
     return ai.summarise(text, { style: style || settings.get('ai.summaryStyle') || 'paragraph' })
       .then((result) => ({ result }))
       .catch((err) => ({ error: (err && err.message) || 'That could not be summarised.' }));
+  });
+
+  ipcMain.handle('prism:ai:translation-languages', () => ai.translationLanguages());
+
+  ipcMain.handle('prism:ai:translate', async (e, { wid, source, target }) => {
+    const off = aiOff();
+    if (off) return off;
+    const effectiveWid = wid || activeWid(e);
+    if (wid && !tabs.windowRecord(wid)) return { error: 'The browser window is no longer available.' };
+    const wc = tabs.activeWebContents(effectiveWid);
+    if (!wc) return { error: 'There is no active page to translate.' };
+    if (!/^https?:/i.test(wc.getURL())) return { error: 'Open a web page first.' };
+    let text = '';
+    try {
+      text = await wc.executeJavaScript("document.body ? document.body.innerText : ''");
+    } catch (_) { text = ''; }
+    try {
+      return { result: await ai.translate(text, { source, target }) };
+    } catch (error) {
+      return { error: (error && error.message) || 'This page could not be translated.' };
+    }
   });
 
   ipcMain.handle('prism:ai:clear-cache', () => ai.clearCache());

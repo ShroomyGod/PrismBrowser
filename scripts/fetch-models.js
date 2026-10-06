@@ -117,9 +117,27 @@ async function main() {
     tokenizer: (progress_callback) => t.AutoTokenizer.from_pretrained(text.id, { progress_callback })
   });
 
+  const translation = tasks.TRANSLATION_MODEL;
+  await stage(t, translation, {
+    model: (progress_callback) =>
+      t.AutoModelForSeq2SeqLM.from_pretrained(translation.id, { dtype: translation.dtype, progress_callback }),
+    tokenizer: (progress_callback) => t.AutoTokenizer.from_pretrained(translation.id, { progress_callback })
+  });
+  const translationRoot = path.join(OUT, ...translation.id.split('/'));
+  const missingTranslationFiles = translation.requiredFiles
+    .map((file) => path.join(translationRoot, ...file.split('/')))
+    .filter((file) => !fs.existsSync(file));
+  if (missingTranslationFiles.length) {
+    throw new Error('Translation model is incomplete; missing ' + path.relative(OUT, missingTranslationFiles[0]));
+  }
+
   // Remove only the previous AI model folders after the replacements have
   // loaded successfully, so failed downloads never destroy the last usable set.
-  for (const oldId of ['onnx-community/Florence-2-base-ft', 'HuggingFaceTB/SmolLM2-135M-Instruct']) {
+  for (const oldId of [
+    'onnx-community/Florence-2-base-ft',
+    'HuggingFaceTB/SmolLM2-135M-Instruct',
+    'Xenova/opus-mt-en-es'
+  ]) {
     fs.rmSync(path.join(OUT, ...oldId.split('/')), { recursive: true, force: true });
   }
 
@@ -129,7 +147,7 @@ async function main() {
     `${JSON.stringify(
       {
         generatedFor: 'Prism',
-        models: [vision, text].map((m) => ({ id: m.id, dtype: m.dtype, label: m.label })),
+        models: [vision, text, translation].map((m) => ({ id: m.id, dtype: m.dtype, label: m.label })),
         bytes: size.bytes,
         files: size.files
       },

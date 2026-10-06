@@ -142,7 +142,7 @@ The package manifest and lockfile are currently out of sync regarding dependency
 | `npm run icons` | Regenerate icons and wordmarks from the source artwork in `assets/`. |
 | `npm run models` | Download the local AI weights into `resources/models/` so they can be bundled into the installer. Run this before `npm run release`. |
 | `npm run build` | Build the configured Windows application directory with Electron Builder. |
-| `npm run release` | Regenerate/validate icons, clean prior build outputs, build the Windows installer and portable executable, verify artifacts, and publish (replacing any same-version GitHub release) if a GitHub token is available. |
+| `npm run release` | Regenerate/validate icons, build and verify the Windows installer/portable executable, commit source changes, push the current branch, and publish/re-publish the GitHub release if a GitHub token is available. |
 
 ## Build and release
 
@@ -159,7 +159,7 @@ Expected outputs in the repository root include:
 - `Prism-<version>-x64.exe.blockmap` — installer update metadata
 - `latest.yml` — Electron Builder update manifest (when generated)
 
-The release script regenerates the icons, checks their transparent borders, removes previous matching Prism/Shroom installer artifacts and known build directories, runs Electron Builder, and checks that expected outputs exist. Review `scripts/release.js` before using it: the script removes prior generated build outputs and, when publishing is enabled, may create and push the version tag, delete the existing GitHub release for that version, and upload the new artifacts.
+The release script regenerates the icons, checks their transparent borders, removes previous matching Prism/Shroom installer artifacts and known build directories, runs Electron Builder, and checks that expected outputs exist. After a successful build, it commits source changes and pushes the current branch; generated installer/build outputs are excluded from the commit. The release source must start with a clean Git index and a checked-out branch plus remote. A failed commit or push stops the workflow before GitHub publishing. Review `scripts/release.js` before using it: the script removes prior generated build outputs and, when publishing is enabled, may create and push the version tag, delete the existing GitHub release for that version, and upload the new artifacts.
 
 Release descriptions come from [`scripts/release-notes.md`](scripts/release-notes.md). That template is copied to `release-notes.md` (gitignored) at publish time with the version substituted, and Electron Builder publishes it as the GitHub release body. Edit the template to change what future releases say about Prism; the generated copy is not committed.
 
@@ -168,9 +168,10 @@ Release descriptions come from [`scripts/release-notes.md`](scripts/release-note
 `npm run release` can be run again without bumping `version`. When a GitHub token is set, the script:
 
 1. Builds and verifies the Windows artifacts first, so a broken build never reaches GitHub.
-2. Pushes the version tag (`v<version>`) if it is not on the remote yet, and stops if that fails.
-3. Deletes every published GitHub release whose tag matches the version being built.
-4. Uploads the new installer, portable build, blockmap, and `latest.yml` to a new release under the same tag.
+2. Commits source changes (if any) and pushes the current branch; generated installers are not committed.
+3. If a GitHub token is set, pushes the version tag (`v<version>`) if it is not on the remote yet, and stops if that fails.
+4. Deletes every published GitHub release whose tag matches the version being built.
+5. Uploads the new installer, portable build, blockmap, and `latest.yml` to a new release under the same tag.
 
 This makes a same-version republish (for example a build that fixes a bug without a version bump) reach existing installs: Prism's updater compares the published installer's SHA-512, so a replaced release is offered even though the version number is unchanged. Deletion happens only after a successful local build and a confirmed remote tag, and a draft release with the same tag stops the run rather than being deleted automatically.
 
@@ -181,7 +182,7 @@ $env:GITHUB_TOKEN = "<your-token>"
 npm run release
 ```
 
-Never commit the token, put it in `package.json`, or ship it inside Prism. Git tag pushing also requires Git itself to be authenticated for the configured remote. Commit the exact release source first, verify the current branch and remote, and inspect the version/tag before publishing. A new version in `package.json` is normally required, but republishing the same version replaces the existing release for that tag as described above.
+Never commit the token, put it in `package.json`, or ship it inside Prism. Git tag pushing also requires Git itself to be authenticated for the configured remote. The release command commits and pushes source changes automatically after the build succeeds. It refuses a detached checkout, missing remote, or pre-staged index changes; review and commit/unstage staged work before running. A new version in `package.json` is normally required, but republishing the same version replaces the existing release for that tag as described above.
 
 ## Tests
 

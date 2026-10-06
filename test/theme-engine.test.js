@@ -179,6 +179,19 @@ theme.apply(documentElement, {
 assert.strictEqual(documentElement.dataset.theme, 'dark', 'theme mode follows the preset');
 assert.strictEqual(documentElement.dataset.themePreset, 'catppuccin-mocha', 'the active preset is exposed');
 assert.strictEqual(documentElement.dataset.motion, 'none', 'motion follows the preset');
+assert.strictEqual(documentElement.dataset.animationTheme, 'basic', 'the default animation theme is exposed');
+theme.apply(documentElement, {
+  themePreset: 'catppuccin-mocha',
+  animationTheme: 'playful',
+  accessibility: { textScale: 135, contrast: 'high', largerTargets: true, reducedMotion: 'reduce', focusIndicators: false }
+});
+assert.strictEqual(documentElement.dataset.animationTheme, 'playful', 'a selected animation theme is exposed');
+theme.apply(documentElement, {
+  themePreset: 'catppuccin-mocha',
+  animationTheme: 'unsupported',
+  accessibility: { textScale: 135, contrast: 'high', largerTargets: true, reducedMotion: 'reduce', focusIndicators: false }
+});
+assert.strictEqual(documentElement.dataset.animationTheme, 'basic', 'unknown animation themes fall back safely');
 assert.strictEqual(documentElement.dataset.contrast, 'high', 'high contrast is exposed');
 assert.strictEqual(documentElement.dataset.largeTargets, 'true', 'larger targets are exposed');
 assert.strictEqual(documentElement.dataset.reduceMotion, 'reduce', 'reduced motion is exposed');

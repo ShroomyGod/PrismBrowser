@@ -3,8 +3,10 @@
 // row reaches the main process (tab groups, zoom, internal pages).
 'use strict';
 
-const { app } = require('electron');
+const { app, BrowserWindow } = require('electron');
+const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const M = (name) => require(path.join(__dirname, '..', 'src', 'main', name));
 const fail = (message) => { console.error(message); try { app.exit(1); } catch (_) {} };
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -90,9 +92,33 @@ app.whenReady().then(async () => {
     // Google Lens was explicitly excluded.
     if (opened.labels.some((label) => /lens/i.test(label))) throw new Error('Google Lens must not appear in the menu');
 
-    // A submenu must fly out and carry live list data, not just a chevron.
+    // Every parent entry must produce a flyout, including Prism Vision's AI
+    // submenu; the flyout must sit flush against its panel to avoid a dead gap.
+    const hoverChecks = await shellWc.executeJavaScript(`(async () => {
+      const panel = document.getElementById('menu-panel');
+      const sub = document.getElementById('menu-sub');
+      const ids = Array.from(panel.querySelectorAll('.mi[data-has-sub]')).map((r) => r.dataset.id);
+      const results = [];
+      for (const id of ids) {
+        const row = panel.querySelector('.mi[data-id="' + id + '"]');
+        row.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerType: 'mouse' }));
+        row.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+        for (let i = 0; i < 30 && (sub.style.display === 'none' || !sub.children.length); i++)
+          await new Promise((resolve) => setTimeout(resolve, 30));
+        const panelBox = panel.getBoundingClientRect();
+        const subBox = sub.getBoundingClientRect();
+        const touches = Math.abs(subBox.right - panelBox.left) < 2 || Math.abs(subBox.left - panelBox.right) < 2;
+        results.push({ id, open: sub.style.display !== 'none' && sub.children.length > 0, touches });
+      }
+      return results;
+    })()`);
+    console.log('MENU_HOVER=' + JSON.stringify(hoverChecks));
+    if (hoverChecks.some((check) => !check.open || !check.touches)) {
+      throw new Error('one or more parent flyouts failed hover/edge checks: ' + JSON.stringify(hoverChecks));
+    }
     await shellWc.executeJavaScript(`
       const row = document.querySelector('#menu-panel .mi[data-id="tab-groups"]');
+      row.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerType: 'mouse' }));
       row.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
       true;
     `);
@@ -145,6 +171,46 @@ app.whenReady().then(async () => {
       throw new Error('Close all groups should have closed the one grouped tab, had ' +
         tabs.windowRecord(wid).tabs.length + ' of ' + before);
     }
+
+    // A manifest action popup should open as an isolated, positioned Prism
+    // window from the toolbar dropdown, not route to the management page.
+    const popupDir = fs.mkdtempSync(path.join(app.getPath('temp'), 'prism-popup-fixture-'));
+    const keyPair = crypto.generateKeyPairSync('rsa', { modulusLength: 1024 });
+    const extensionKey = keyPair.publicKey.export({ type: 'spki', format: 'der' }).toString('base64');
+    fs.writeFileSync(path.join(popupDir, 'manifest.json'), JSON.stringify({
+      manifest_version: 3,
+      name: 'Prism Popup UI Test',
+      version: '1.0.0',
+      key: extensionKey,
+      action: { default_popup: 'popup.html' }
+    }, null, 2));
+    fs.writeFileSync(path.join(popupDir, 'popup.html'), '<!doctype html><title>Popup fixture</title><p id="popup-fixture">Action popup loaded</p>');
+    const extensionApi = M('extensions');
+    const popupExtensionId = await extensionApi.loadUnpacked(popupDir);
+    await shellWc.executeJavaScript(`document.getElementById('ext-btn').click(); true`);
+    let popupRow = false;
+    for (let i = 0; i < 40; i++) {
+      popupRow = await shellWc.executeJavaScript(`Array.from(document.querySelectorAll('#ext-list .ext-row')).some((r) => r.textContent.includes('Prism Popup UI Test'))`);
+      if (popupRow) break;
+      await wait(50);
+    }
+    if (!popupRow) throw new Error('action extension did not appear in the toolbar menu');
+    await shellWc.executeJavaScript(`Array.from(document.querySelectorAll('#ext-list .ext-row')).find((r) => r.textContent.includes('Prism Popup UI Test')).click(); true`);
+    let popupWindow = null;
+    for (let i = 0; i < 60; i++) {
+      popupWindow = BrowserWindow.getAllWindows().find((candidate) =>
+        candidate !== record.win && !candidate.isDestroyed() &&
+        candidate.webContents.getURL().startsWith('chrome-extension://' + popupExtensionId + '/popup.html'));
+      if (popupWindow) break;
+      await wait(50);
+    }
+    if (!popupWindow) throw new Error('extension toolbar click did not open its popup document');
+    const popupContent = await popupWindow.webContents.executeJavaScript(`document.getElementById('popup-fixture') && document.getElementById('popup-fixture').textContent`);
+    if (popupContent !== 'Action popup loaded') throw new Error('extension popup content was not rendered: ' + popupContent);
+    popupWindow.close();
+    await extensionApi.remove(popupExtensionId);
+    fs.rmSync(popupDir, { recursive: true, force: true });
+    console.log('EXTENSION_POPUP_UI_OK');
 
     // Zoom row: the shell reads the zoom factor out of the tab snapshot.
     // Chromium persists per-origin zoom, so reset first to keep this stable.

@@ -223,6 +223,28 @@ app.whenReady().then(async () => {
     const tldr = await ai.summarise(ARTICLE, { style: 'tldr' });
     check('tldr style is echoed back', tldr.style === 'tldr');
 
+    // ---- local multilingual machine translation ----
+    console.log('  ... translating through the local M2M100 model');
+    const translation = await ai.translate('Good morning, how are you?', { source: 'en', target: 'es' });
+    console.log('  ... translation: ' + JSON.stringify(translation.text));
+    check('translation reports the requested English-to-Spanish direction', translation.source === 'en' && translation.target === 'es');
+    check('Spanish output uses Latin-script Spanish punctuation or accents',
+      /[áéíóúñ¿¡]/i.test(translation.text), translation.text);
+    const frenchTranslation = await ai.translate('Good morning, how are you?', { source: 'en', target: 'fr' });
+    check('translation runs another locally supported target language', frenchTranslation.target === 'fr' && /bonjour/i.test(frenchTranslation.text), frenchTranslation.text);
+    const reverseTranslation = await ai.translate('Buenos días, ¿cómo estás?', { source: 'es', target: 'en' });
+    check('translation supports non-English source languages', reverseTranslation.source === 'es' && reverseTranslation.target === 'en' && /good morning/i.test(reverseTranslation.text), reverseTranslation.text);
+    const translatedLongText = await ai.translate('First sentence. '.repeat(35), { target: 'es' });
+    check('multi-chunk translation returns output for each chunk',
+      translatedLongText.text.split('Primera sentencia').length - 1 >= 20, translatedLongText.text.slice(0, 300));
+    check('translation reports a duration', typeof translation.ms === 'number' && translation.ms > 0);
+    let unsupportedTranslation = null;
+    try { await ai.translate('Hello, how are you?', { target: 'xx' }); } catch (error) { unsupportedTranslation = error.message; }
+    check('unsupported translation targets are refused honestly', !!unsupportedTranslation);
+    let identicalLanguages = null;
+    try { await ai.translate('Hello, how are you?', { source: 'en', target: 'en' }); } catch (error) { identicalLanguages = error.message; }
+    check('identical source and target languages are refused', !!identicalLanguages);
+
     // ---- short text is refused rather than hallucinated ----
     let tooShort = null;
     try { await ai.summarise('hi', {}); } catch (e) { tooShort = e.message; }

@@ -38,12 +38,6 @@
     eye: '<svg viewBox="0 0 16 16" width="15" height="15"><path d="M1.8 8S4 4 8 4s6.2 4 6.2 4-2.2 4-6.2 4S1.8 8 1.8 8z" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linejoin="round"/><circle cx="8" cy="8" r="1.9" stroke="currentColor" stroke-width="1.3" fill="none"/></svg>'
   };
 
-  const TRANSLATE_LANGUAGES = [
-    ['en', 'English'], ['es', 'Spanish'], ['fr', 'French'], ['de', 'German'],
-    ['it', 'Italian'], ['pt', 'Portuguese'], ['nl', 'Dutch'], ['pl', 'Polish'],
-    ['ru', 'Russian'], ['ja', 'Japanese'], ['ko', 'Korean'], ['zh', 'Chinese (Simplified)']
-  ].map(([code, label]) => ({ id: 'translate:' + code, label, action: 'translate', target: code }));
-
   return {
     icons: ic,
     sections: [
@@ -118,7 +112,7 @@
             { id: 'zoom-fullscreen', label: 'Full screen', shortcut: 'F11', action: 'fullscreen' }
           ] },
           { id: 'print', label: 'Print…', icon: ic.print, shortcut: 'Ctrl+P', action: 'print' },
-          { id: 'translate', label: 'Translate…', icon: ic.translate, submenu: TRANSLATE_LANGUAGES },
+          { id: 'translate', label: 'Translate…', icon: ic.translate, action: 'translate' },
           { id: 'find', label: 'Find and edit', icon: ic.find, submenu: [
             { id: 'find-open', label: 'Find…', shortcut: 'Ctrl+F', action: 'find-open' },
             { id: 'find-next', label: 'Find next', action: 'find-next' },
@@ -139,6 +133,8 @@
           { id: 'ai', label: 'Prism AI', icon: ic.spark, submenu: [
             { id: 'ai-vision', label: 'Prism Vision', icon: ic.eye, action: 'ai-vision' },
             { id: 'ai-summarise', label: 'Summarise this page', action: 'ai-summarise' },
+            { id: 'ai-accessibility', label: 'Plain-language summary', action: 'ai-accessibility' },
+            { id: 'ai-security-check', label: 'Check local threat lists', icon: ic.shield, action: 'ai-security-check' },
             { separator: true, id: 'ai-sep' },
             { id: 'ai-models', label: 'Manage local models', action: 'ai-models' }
           ] },
@@ -150,6 +146,7 @@
             { id: 'more-search', label: 'Prism Search', icon: ic.search, action: 'search-home' },
             { id: 'more-shortcuts', label: 'Keyboard shortcuts', action: 'shortcuts' },
             { id: 'more-lists', label: 'Update protection lists', icon: ic.shield, action: 'update-lists' },
+            { id: 'more-security-check', label: 'Check local threat lists', icon: ic.shield, action: 'ai-security-check' },
             { id: 'more-clear-site', label: 'Clear site data for this site', action: 'clear-site-data' }
           ] }
         ]

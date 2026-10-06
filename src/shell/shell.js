@@ -65,12 +65,35 @@ styleTag.textContent = '.spin{animation:rot .9s linear infinite}@keyframes rot{t
 document.head.appendChild(styleTag);
 
 // ---------- tabs rendering ----------
+const enteringTabIds = new Set();
 function renderTabs() {
   const wrap = $('tabs');
+  const existing = new Map(Array.from(wrap.children)
+    .filter((node) => node.classList.contains('tab') && !node.classList.contains('tab-leaving'))
+    .map((node) => [node.dataset.tabId, node]));
+  const currentIds = new Set(state.tabs.map((tab) => tab.id));
+  const animationTheme = document.documentElement.dataset.animationTheme || 'basic';
+  const reduceMotion = animationTheme === 'off' ||
+    document.documentElement.dataset.reduceMotion === 'reduce' ||
+    (document.documentElement.dataset.reduceMotion === 'system' && matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const animateTabs = animationTheme !== 'off' && !reduceMotion;
+  const leaving = animateTabs
+    ? Array.from(existing.values()).filter((node) => !currentIds.has(node.dataset.tabId))
+    : [];
   wrap.textContent = '';
   for (const t of state.tabs) {
     const div = el('div', 'tab' + (state.active && t.id === state.active.id ? ' active' : ''));
     div.dataset.tabId = t.id;
+    if (animateTabs && !existing.has(t.id) && !enteringTabIds.has(t.id)) {
+      enteringTabIds.add(t.id);
+      const duration = animationTheme === 'playful' ? 360 : animationTheme === 'smooth' ? 320 : 260;
+      setTimeout(() => {
+        enteringTabIds.delete(t.id);
+        const current = wrap.querySelector('.tab[data-tab-id="' + t.id + '"]');
+        if (current) current.classList.remove('tab-entering');
+      }, duration);
+    }
+    if (animateTabs && enteringTabIds.has(t.id)) div.classList.add('tab-entering');
     div.title = t.title + (t.url && t.url.startsWith('http') ? '\n' + t.url : '');
 
     if (t.loading) {
@@ -107,6 +130,11 @@ function renderTabs() {
     div.addEventListener('auxclick', (ev) => { if (ev.button === 1) S.closeTab(t.id); });
     div.addEventListener('contextmenu', (ev) => { ev.preventDefault(); S.tabContextMenu(WID, t.id); });
     wrap.appendChild(div);
+  }
+  for (const node of leaving) {
+    node.classList.add('tab-leaving');
+    wrap.appendChild(node);
+    setTimeout(() => node.remove(), animationTheme === 'playful' ? 340 : animationTheme === 'smooth' ? 260 : 200);
   }
 }
 
@@ -257,7 +285,7 @@ function hideDropdown() {
 // toasts) — otherwise the page hides them. Poll once per frame and report the
 // bottom edge; main applies it as the shell view's height. Overlays are all
 // top-anchored so a single rectangle from y=0 always covers them.
-const OVERLAY_IDS = ['omni-dropdown', 'menu-panel', 'shield-pop', 'ext-pop', 'theme-pop', 'findbar', 'load-progress', 'toasts', 'status-bubble', 'menu-sub'];
+const OVERLAY_IDS = ['omni-dropdown', 'menu-panel', 'menu-sub', 'shield-pop', 'ext-pop', 'theme-pop', 'translation-pop', 'findbar', 'load-progress', 'toasts', 'status-bubble'];
 let lastExtent = -1;
 function computeNeed() {
   try {
@@ -358,6 +386,7 @@ document.addEventListener('click', (ev) => {
   if (!$('menu-panel').contains(ev.target) && !$('menu-sub').contains(ev.target) && ev.target.closest && !ev.target.closest('#menu-btn') && $('menu-panel').style.display !== 'none') { closeMenu(); changed = true; }
   if (!$('ext-pop').contains(ev.target) && ev.target.closest && !ev.target.closest('#ext-btn') && $('ext-pop').style.display !== 'none') { $('ext-pop').style.display = 'none'; changed = true; }
   if (!$('theme-pop').contains(ev.target) && ev.target.closest && !ev.target.closest('#theme-btn') && $('theme-pop').style.display !== 'none') { $('theme-pop').style.display = 'none'; changed = true; }
+  if (!$('translation-pop').contains(ev.target) && !$('menu-panel').contains(ev.target) && !$('menu-sub').contains(ev.target) && $('translation-pop').style.display !== 'none') { $('translation-pop').style.display = 'none'; changed = true; }
   if (!$('shield-pop').contains(ev.target) && ev.target.closest && !ev.target.closest('#shield') && $('shield-pop').style.display !== 'none') { $('shield-pop').style.display = 'none'; changed = true; }
   if (changed) syncExtentNow();
 });
@@ -389,14 +418,15 @@ $('shield').addEventListener('click', () => {
   const show = pop.style.display === 'none';
   closeMenu();
   $('ext-pop').style.display = 'none';
+  $('translation-pop').style.display = 'none';
   pop.style.display = show ? '' : 'none';
   if (show) refreshShieldPop();
   syncExtentNow();
 });
 // ---------- extensions dropdown (the toolbar "puzzle piece") ----------
-// Lists what is installed and opens each one's management page. Electron's
-// extension support has no toolbar-popup surface, so an extension whose UI is
-// only a popup cannot be shown here; we point at its management page instead.
+// Action popup pages open in a small Prism-owned window; extensions without
+// one keep their management-page shortcut. Electron still supports only a
+// subset of Chrome's extension APIs.
 const extPop = $('ext-pop');
 const extList = $('ext-list');
 let extItems = [];
@@ -414,15 +444,31 @@ function renderExtList() {
   }
   for (const x of extItems) {
     const row = el('button', 'ext-row');
-    const dot = el('span', 'ext-dot' + (x.active ? '' : ' off'));
+    const icon = el('span', 'ext-icon');
+    if (x.icon || x.id) {
+      const img = el('img');
+      img.src = x.icon && x.icon.startsWith('prism:') ? x.icon : 'prism://exticon/' + encodeURIComponent(x.id);
+      img.alt = '';
+      img.onerror = () => { img.remove(); icon.textContent = '◇'; };
+      icon.appendChild(img);
+    } else icon.textContent = '◇';
     const nm = el('span', 'ext-name');
     nm.textContent = x.name || x.id;
     nm.title = x.name || x.id;
-    row.append(dot, nm);
-    row.title = (x.name || x.id) + '  -  click to open its page';
+    const action = el('span', 'ext-action');
+    action.textContent = x.popup ? '↗' : '⋯';
+    row.append(icon, nm, action);      row.title = x.popup
+
+      ? (x.name || x.id) + ' — open extension popup'
+      : (x.name || x.id) + ' — manage extension';
     row.addEventListener('click', () => {
       extPop.style.display = 'none';
-      S.newTab(WID, 'prism://extensions');
+      if (x.popup) {
+        const button = $('ext-btn').getBoundingClientRect();
+        S.extensionsOpenPopup(WID, x.id, { right: button.right, bottom: button.bottom });
+      }
+      else S.newTab(WID, 'prism://extensions');
+      syncExtentNow();
     });
     extList.appendChild(row);
   }
@@ -441,6 +487,7 @@ $('ext-btn').addEventListener('click', () => {
   // Only one toolbar popup at a time.
   closeMenu();
   $('shield-pop').style.display = 'none';
+  $('translation-pop').style.display = 'none';
   extPop.style.display = show ? '' : 'none';
   if (show) refreshExtList();
   syncExtentNow();
@@ -476,6 +523,7 @@ $('shield-site').addEventListener('change', async (ev) => {
   refreshShieldPop();
 });
 $('open-privacy').addEventListener('click', () => { S.newTab(WID, 'prism://privacy'); });
+$('security-check-local').addEventListener('click', () => { checkActivePageThreatLists(); });
 
 function settingsPatch() {
   return JSON.parse(JSON.stringify({ privacy: state.settings.privacy }));
@@ -505,6 +553,22 @@ async function refreshShieldPop() {
 // left without a handler.
 const MENU = window.PRISM_MENU;
 let openSubmenuFor = null;
+let submenuGeneration = 0;
+let submenuCloseTimer = null;
+
+function cancelSubmenuClose() {
+  clearTimeout(submenuCloseTimer);
+  submenuCloseTimer = null;
+}
+
+function scheduleSubmenuClose() {
+  cancelSubmenuClose();
+  submenuCloseTimer = setTimeout(() => {
+    submenuCloseTimer = null;
+    closeSubmenu();
+    syncExtentNow();
+  }, 160);
+}
 
 // History, bookmark, and extension names are user data and are not guaranteed
 // to be parseable URLs, so hostname extraction must never throw.
@@ -573,6 +637,8 @@ function closeMenu() {
 }
 
 function closeSubmenu() {
+  cancelSubmenuClose();
+  submenuGeneration++;
   const sub = $('menu-sub');
   sub.style.display = 'none';
   sub.textContent = '';
@@ -589,25 +655,41 @@ function submenuItemsFor(id) {
 }
 
 async function renderSubmenu(parentRow) {
-  const children = submenuItemsFor(parentRow.dataset.id);
+  const parentId = parentRow.dataset.id;
+  const generation = ++submenuGeneration;
   const sub = $('menu-sub');
-  sub.textContent = '';
+  if (openSubmenuFor !== parentId) {
+    sub.style.display = 'none';
+    sub.textContent = '';
+  }
+  openSubmenuFor = parentId;
+  const children = submenuItemsFor(parentId);
+  const content = document.createDocumentFragment();
   let listed = false;
   for (const child of children) {
     if (child.list) {
       listed = true;
       const rows = await loadMenuList(child.list);
-      for (const row of rows) sub.appendChild(row);
+      // A slower list request must not replace a submenu the pointer has
+      // already moved to, or resurrect one after the menu was closed.
+      if (generation !== submenuGeneration || !parentRow.isConnected) return;
+      for (const row of rows) content.appendChild(row);
       if (!rows.length) {
         const note = el('div', 'pop-note');
         note.textContent = emptyListText(child.list);
-        sub.appendChild(note);
+        content.appendChild(note);
       }
       continue;
     }
-    sub.appendChild(menuRow(liveMenuItem(child), true));
+    if (child.separator) {
+      content.appendChild(el('div', 'msep'));
+      continue;
+    }
+    content.appendChild(menuRow(liveMenuItem(child), true));
   }
-  if (listed) sub.appendChild(el('div', 'msep'));
+  if (generation !== submenuGeneration || !parentRow.isConnected) return;
+  if (listed) content.appendChild(el('div', 'msep'));
+  sub.replaceChildren(content);
   sub.style.display = '';
 
   // Position against the row. #menu-sub is absolutely positioned but its
@@ -616,7 +698,9 @@ async function renderSubmenu(parentRow) {
   // static position and strand the flyout at the far left of the window.
   const chromeBox = $('chrome').getBoundingClientRect();
   const panelBox = $('menu-panel').getBoundingClientRect();
-  const gap = 6;
+  // The flyout touches the menu edge. Even a small visual gap makes the hover
+  // path cross a dead region and causes the submenu to disappear before entry.
+  const gap = 0;
   const subWidth = sub.offsetWidth;
   const subHeight = sub.offsetHeight;
   const panelLeft = panelBox.left - chromeBox.left;
@@ -738,11 +822,7 @@ const MENU_ACTIONS = {
     toast('Tab ungrouped', group ? 'Removed from ' + group.name + '.' : '')),
   'group-close-all': () => S.tabGroups('close-all').then(() => toast('Tab groups closed', 'Grouped tabs were closed.')),
   'focus-group': (row) => S.tabGroups('focus', row.dataset.payload),
-  'translate': (row) => {
-    const url = translateUrlFor(row.dataset.target || 'en');
-    if (!url) return toast('Nothing to translate', 'Open a web page first.');
-    return S.newTab(WID, url);
-  },
+  'translate': () => translateActivePage(),
   // Prism AI. The Vision page captures the active tab itself when it opens, so
   // this only has to navigate; summarise runs against the active tab and
   // reports back as a toast like the other page-level actions.
@@ -754,24 +834,9 @@ const MENU_ACTIONS = {
     }
     return S.newTab(WID, 'prism://vision');
   },
-  'ai-summarise': () => {
-    if (state.settings && state.settings.ai && state.settings.ai.enabled === false) {
-      return toast('Local AI is off', 'Turn it back on in Settings to summarise pages.');
-    }
-    const url = (state.active && state.active.url) || '';
-    if (!/^https?:/i.test(url)) return toast('Nothing to summarise', 'Open a web page first.');
-    const pending = toast('Summarising this page...', 'Prism is reading the page and writing a summary on this device.');
-    // No style argument: the handler falls back to the one in Settings.
-    return S.aiSummarise().then((res) => {
-      if (res && res.error) return toast('Could not summarise', res.error, true);
-      const result = res && res.result;
-      if (!result || !result.text) return toast('Nothing to summarise', 'The model returned an empty summary.');
-      return S.copyText(result.text).then(() => toast(
-        'Summary ready',
-        result.text.length + ' characters, copied to the clipboard.'
-      ));
-    }).catch((err) => toast('Could not summarise', (err && err.message) || 'The local model failed.', true));
-  },
+  'ai-summarise': () => summariseActivePage(),
+  'ai-accessibility': () => summariseActivePage('plain', 'Plain-language summary'),
+  'ai-security-check': () => checkActivePageThreatLists(),
   'ai-models': () => S.newTab(WID, 'prism://vision#models'),
   'devtools': () => S.devtools(WID),
   'reload': () => S.reload(WID),
@@ -794,12 +859,141 @@ const MENU_ACTIONS = {
   'check-update': () => runUpdateCheck()
 };
 
-function translateUrlFor(code) {
+async function summariseActivePage(style, label) {
+  if (state.settings && state.settings.ai && state.settings.ai.enabled === false) {
+    return toast('Local AI is off', 'Turn it back on in Settings to summarise pages.');
+  }
   const url = (state.active && state.active.url) || '';
-  if (!/^https?:/i.test(url)) return null;
-  return 'https://translate.google.com/translate?sl=auto&tl=' + encodeURIComponent(code) +
-    '&u=' + encodeURIComponent(url) + '&op=translate';
+  if (!/^https?:/i.test(url)) return toast('Nothing to summarise', 'Open a web page first.');
+  const pending = toast('Summarising this page...', 'Prism is reading the page and writing a summary on this device.');
+  try {
+    const res = await S.aiSummarise(style);
+    if (res && res.error) return toast('Could not summarise', res.error, true);
+    const result = res && res.result;
+    if (!result || !result.text) return toast('Nothing to summarise', 'The model returned an empty summary.');
+    await S.copyText(result.text);
+    toast(label || 'Summary ready', result.text.length + ' characters, copied to the clipboard.');
+  } catch (err) {
+    toast('Could not summarise', (err && err.message) || 'The local model failed.', true);
+  } finally {
+    pending();
+  }
+}async function checkActivePageThreatLists() {
+  if (!state.active || !/^https?:/i.test(state.active.url || '')) {
+    return toast('No web page to check', 'Open a website to check its address against Prism’s local threat lists.');
+  }
+  try {
+    const result = await S.securityCheckLocal(WID);
+    if (!result || result.error) return toast('Threat-list check unavailable', result && result.error || 'Could not inspect this address.', true);
+    const detail = result.status === 'match'
+      ? 'This address matches a local ' + result.matchType + ' threat entry (' + result.host + '). Do not continue unless you are certain.'
+      : result.status === 'exception'
+        ? result.host + ' is on your local allow-list, so Prism’s warning is bypassed for this host.'
+        : 'No match for ' + result.host + ' in the local lists (' + result.hostEntries.toLocaleString() + ' domains, ' + result.urlEntries.toLocaleString() + ' URLs). This is not a guarantee that the site is safe.';
+    toast(result.status === 'match' ? 'Local threat match' : 'Local threat-list check', detail, result.status === 'match');
+  } catch (error) {
+    toast('Threat-list check unavailable', (error && error.message) || 'Could not inspect this address.', true);
+  }
 }
+
+let translationLanguages = null;
+
+async function loadTranslationLanguages() {
+  if (translationLanguages) return translationLanguages;
+  const languages = await S.aiTranslationLanguages();
+  if (!Array.isArray(languages) || !languages.length) throw new Error('The local model has no available translation languages.');
+  translationLanguages = languages;
+  let sourceSelection = 'en';
+  let targetSelection = 'es';
+  for (const id of ['translation-source', 'translation-target']) {
+    const select = $(id);
+    const previous = select.value;
+    if (previous && languages.some((language) => language.id === previous)) {
+      if (id === 'translation-source') sourceSelection = previous;
+      else targetSelection = previous;
+    }
+    select.replaceChildren();
+    for (const language of languages) {
+      const option = document.createElement('option');
+      option.value = language.id;
+      option.textContent = language.label;
+      select.appendChild(option);
+    }
+    if (languages.some((language) => language.id === previous)) select.value = previous;
+  }
+  $('translation-source').value = sourceSelection;
+  $('translation-target').value = targetSelection;
+  return languages;
+}
+
+async function translateActivePage(source, target) {
+  if (state.settings && state.settings.ai && state.settings.ai.enabled === false) {
+    return toast('Local AI is off', 'Turn it back on in Settings to translate this page.');
+  }
+  if ((source || target) && (!state.active || !/^https?:/i.test(state.active.url || ''))) {
+    return toast('Nothing to translate', 'Open a web page first.');
+  }
+  const pop = $('translation-pop');
+  pop.style.display = '';
+  $('translation-content').textContent = '';
+  try {
+    await loadTranslationLanguages();
+    if (!source && !target) {
+      $('translation-title').textContent = 'Translate this page';
+      $('translation-content').textContent = 'Choose a source and target language, then select Translate.';
+      return;
+    }
+    const sourceLanguage = source || $('translation-source').value || 'en';
+    const targetLanguage = target || $('translation-target').value || 'es';
+    $('translation-source').value = sourceLanguage;
+    $('translation-target').value = targetLanguage;
+    if (sourceLanguage === targetLanguage) return toast('Choose another language', 'The source and target languages must be different.', true);
+    const sourceName = $('translation-source').selectedOptions[0].textContent;
+    const targetName = $('translation-target').selectedOptions[0].textContent;
+    const pending = toast('Translating this page...', 'The page text stays on this device while the local model works.');
+    $('translation-run').disabled = true;
+    try {
+      const response = await S.aiTranslate(WID, sourceLanguage, targetLanguage);
+      if (!response || response.error) return toast('Could not translate', response && response.error || 'The local model failed.', true);
+      const result = response.result;
+      if (!result || !result.text) return toast('Nothing to translate', 'This page has no readable text.');
+      $('translation-title').textContent = sourceName + ' → ' + targetName;
+      $('translation-content').textContent = result.text;
+      const suffix = result.truncated ? ' Showing the first 24,000 characters.' : '';
+      toast(targetName + ' translation ready', result.text.length + ' characters, translated on this device.' + suffix);
+    } finally {
+      $('translation-run').disabled = false;
+      pending();
+    }
+  } catch (error) {
+    toast('Could not translate', (error && error.message) || 'The local model failed.', true);
+  } finally {
+    syncExtentNow();
+  }
+}
+
+$('translation-run').addEventListener('click', () =>
+  translateActivePage($('translation-source').value, $('translation-target').value));
+for (const id of ['translation-source', 'translation-target']) {
+  $(id).addEventListener('change', () => {
+    if (id === 'translation-source' && $('translation-source').value === $('translation-target').value) {
+      const alternative = translationLanguages.find((language) => language.id !== $('translation-source').value);
+      if (alternative) $('translation-target').value = alternative.id;
+    } else if (id === 'translation-target' && $('translation-target').value === $('translation-source').value) {
+      const alternative = translationLanguages.find((language) => language.id !== $('translation-target').value);
+      if (alternative) $('translation-source').value = alternative.id;
+    }
+  });
+}
+$('translation-close').addEventListener('click', () => {
+  $('translation-pop').style.display = 'none';
+  syncExtentNow();
+});
+$('translation-copy').addEventListener('click', async () => {
+  const text = $('translation-content').textContent;
+  await S.copyText(text);
+  toast('Translation copied', text.length + ' characters copied to the clipboard.');
+});
 
 function copyActiveUrl(webOnly) {
   const url = (state.active && state.active.url) || '';
@@ -817,22 +1011,18 @@ function stepFind(delta) {
 
 // Shared by the menu item and the toolbar button so both report the same thing.
 async function runUpdateCheck() {
-  const pending = toast('Checking for updates...', 'Checking for a newer version or bug-fix build.');
+  const pending = toast('Checking for updates...', 'Checking for the latest Prism release.');
   try {
     const st = await S.checkForUpdates();
     if (st && st.error) toast('Update check failed', st.error, true);
     else if (st && st.downloaded) {
       pendingUpdate = { version: st.version, downloaded: true, buildRefresh: !!st.buildRefresh };
       showUpdateButton(pendingUpdate);
-      toast('Update ready', st.buildRefresh
-        ? 'The latest same-version bug-fix build is ready to install.'
-        : 'Version ' + st.version + ' is ready to install.', false, 'Update now', () => S.installUpdate());
+      toast('Update ready', 'Prism ' + st.version + ' is ready to install.', false, 'Update now', () => S.installUpdate());
     } else if (st && st.available) {
       pendingUpdate = { version: st.version, downloaded: false, buildRefresh: !!st.buildRefresh };
       showUpdateButton(pendingUpdate);
-      toast('Update available', st.buildRefresh
-        ? 'Downloading the latest bug-fix build...'
-        : 'Downloading version ' + st.version + '...');
+      toast('Update available', 'Downloading Prism ' + st.version + '...');
     } else toast('You are up to date', 'Prism ' + (st && st.version) + ' is the latest version.');
   } catch (error) {
     toast('Update check failed', (error && error.message) || String(error), true);
@@ -856,22 +1046,42 @@ $('menu-btn').addEventListener('click', () => {
   const show = panel.style.display === 'none';
   $('shield-pop').style.display = 'none';
   $('ext-pop').style.display = 'none';
+  $('translation-pop').style.display = 'none';
   if (!show) return closeMenu();
   $('theme-pop').style.display = 'none';
+  $('translation-pop').style.display = 'none';
   renderMenu();
   panel.style.display = '';
   closeSubmenu();
   syncExtentNow();
 });
 
+$('menu-panel').addEventListener('pointerenter', cancelSubmenuClose);
+$('menu-panel').addEventListener('pointermove', (ev) => {
+  const row = ev.target.closest('.mi[data-has-sub]');
+  if (!row) return;
+  cancelSubmenuClose();
+  if (openSubmenuFor !== row.dataset.id) renderSubmenu(row);
+});
+$('menu-sub').addEventListener('pointerenter', cancelSubmenuClose);
+$('menu-panel').addEventListener('pointerleave', (ev) => {
+  if (ev.relatedTarget && $('menu-sub').contains(ev.relatedTarget)) return;
+  scheduleSubmenuClose();
+});
+$('menu-sub').addEventListener('pointerleave', (ev) => {
+  if (ev.relatedTarget && $('menu-panel').contains(ev.relatedTarget)) return;
+  scheduleSubmenuClose();
+});
 $('menu-panel').addEventListener('mouseover', (ev) => {
   const row = ev.target.closest('.mi');
   if (!row || !row.dataset.hasSub) {
-    closeSubmenu();
+    // Leave a small grace period to cross the panel/flyout seam, but still
+    // dismiss the old flyout when the pointer settles on a non-parent row.
+    if (openSubmenuFor) scheduleSubmenuClose();
     return;
   }
-  if (openSubmenuFor === row.dataset.id && $('menu-sub').style.display !== 'none') return;
-  openSubmenuFor = row.dataset.id;
+  cancelSubmenuClose();
+  if (openSubmenuFor === row.dataset.id) return;
   renderSubmenu(row);
 });
 
@@ -1006,6 +1216,8 @@ function applyTheme() {
   if (window.PrismTheme) state.theme = document.documentElement.dataset.theme;
   document.documentElement.dataset.motionPreference =
     (state.appearance && state.appearance.accessibility && state.appearance.accessibility.reducedMotion) || 'system';
+  document.documentElement.dataset.animationTheme =
+    ['basic', 'smooth', 'playful', 'off'].includes(appearance.animationTheme) ? appearance.animationTheme : 'basic';
 }
 
 // ---------- quick theme controls ----------
@@ -1117,7 +1329,7 @@ $('theme-btn').addEventListener('click', () => {
   closeMenu(); $('ext-pop').style.display = 'none'; $('shield-pop').style.display = 'none';
   if ($('omni-dropdown').style.display !== 'none') hideDropdown();
   themePop.style.display = show ? '' : 'none';
-  if (show) syncThemeControls();
+  if (show) { $('translation-pop').style.display = 'none'; syncThemeControls(); }
   syncExtentNow();
 });
 $('theme-random').addEventListener('click', () => {
@@ -1216,6 +1428,7 @@ S.onPageFocused(() => {
   if ($('shield-pop').style.display !== 'none') { $('shield-pop').style.display = 'none'; changed = true; }
   if ($('ext-pop').style.display !== 'none') { $('ext-pop').style.display = 'none'; changed = true; }
   if ($('theme-pop').style.display !== 'none') { $('theme-pop').style.display = 'none'; changed = true; }
+  if ($('translation-pop').style.display !== 'none') { $('translation-pop').style.display = 'none'; changed = true; }
   if (changed) syncExtentNow();
 });
 
@@ -1240,7 +1453,7 @@ S.onPopupBlocked(({ url }) => {
 S.onUpdateDownloaded((d) => {
   pendingUpdate = { version: d && d.version, downloaded: true, buildRefresh: !!(d && d.buildRefresh) };
   showUpdateButton(pendingUpdate);
-  const buildLabel = pendingUpdate.buildRefresh ? 'a same-version bug-fix build' : 'Prism ' + (d && d.version ? d.version : '');
+  const buildLabel = 'Prism ' + (d && d.version ? d.version : '');
   toast('Update ready to install',
     buildLabel + ' has been downloaded.',
     false, 'Update now', () => S.installUpdate());
@@ -1248,7 +1461,7 @@ S.onUpdateDownloaded((d) => {
 S.onUpdateAvailable((d) => {
   pendingUpdate = { version: d && d.version, downloaded: !!(d && d.downloaded), buildRefresh: !!(d && d.buildRefresh) };
   showUpdateButton(pendingUpdate);
-  const updateLabel = pendingUpdate.buildRefresh ? 'a same-version bug-fix build' : 'Prism ' + (d && d.version);
+  const updateLabel = 'Prism ' + (d && d.version);
   if (pendingUpdate.downloaded) {
     toast('Update ready to install',
       updateLabel + ' is ready.',
@@ -1260,7 +1473,7 @@ S.onUpdateAvailable((d) => {
 
 // ---------- in-app update button ----------
 // Persistent toolbar affordance: appears automatically when the main process
-// finds a newer version or a changed same-version build (startup check + hourly + "Check for updates").
+// finds a release installer (startup check + hourly + "Check for updates").
 // Clicking it re-checks, then installs: the installer runs silent (/S) and
 // the app quits so files can be replaced — a one-click self-update.
 let pendingUpdate = null;
@@ -1268,11 +1481,9 @@ function showUpdateButton(info) {
   const btn = $('update-btn');
   if (!btn) return;
   btn.style.display = '';
-  btn.title = info && info.buildRefresh
-    ? 'Install the latest bug-fix build (same version)'
-    : info && info.version
-      ? 'Update to ' + info.version + ' (click to update now)'
-      : 'Update available (click to update now)';
+  btn.title = info && info.version
+    ? 'Update Prism to ' + info.version + ' (click to install)'
+    : 'Update available (click to install)';
   syncExtentNow();
 }
 $('update-btn').addEventListener('click', async () => {
@@ -1312,6 +1523,7 @@ S.onDownloadThreat(({ filename, threat }) => {
 window.addEventListener('keydown', (ev) => {
   if (ev.key === 'Escape') {
     if ($('menu-panel').style.display !== 'none' || $('menu-sub').style.display !== 'none') closeMenu();
+    else if ($('translation-pop').style.display !== 'none') { $('translation-pop').style.display = 'none'; syncExtentNow(); }
     else if (findVisible) closeFind();
   }
   // Arrow keys walk the open menu, then its submenu, like any native menu.
@@ -1323,7 +1535,7 @@ window.addEventListener('keydown', (ev) => {
     ev.preventDefault();
   } else if (ev.key === 'ArrowRight') {
     const focused = $('menu-panel').querySelector('.mi.sel[data-has-sub]');
-    if (focused) { renderSubmenu(focused); }
+    if (focused) { cancelSubmenuClose(); renderSubmenu(focused); }
   } else if (ev.key === 'ArrowLeft') {
     if ($('menu-sub').style.display !== 'none') { closeSubmenu(); syncExtentNow(); }
   } else if (ev.key === 'Enter' && $('menu-panel').style.display !== 'none') {
@@ -1343,7 +1555,7 @@ function moveMenuSelection(scope, delta) {
   next.scrollIntoView({ block: 'nearest' });
   // Hovering a parent row opens its submenu, which is what makes arrow-key
   // navigation feel like a real menu instead of a listbox.
-  if (scope.id === 'menu-panel' && next.dataset.hasSub) renderSubmenu(next);
+  if (scope.id === 'menu-panel' && next.dataset.hasSub) { cancelSubmenuClose(); renderSubmenu(next); }
 }
 window.addEventListener('dblclick', (ev) => {
   if (ev.target.id === 'drag-space' || ev.target.id === 'tabstrip') S.maximize();

@@ -42,6 +42,7 @@ const DEFAULTS = {
     // Id from PrismTheme.PRESETS. Replaces the old free hue/saturation/gradient
     // generator, which produced mismatched colour combinations.
     themePreset: 'prism-dark',
+    animationTheme: 'basic', // basic | smooth | playful | off
     accessibility: {
       textScale: 100, contrast: 'normal', largerTargets: false,
       reducedMotion: 'system', focusIndicators: true

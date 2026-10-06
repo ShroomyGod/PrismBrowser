@@ -50,6 +50,20 @@ check('every query-taking task is flagged needsInput',
 
 check('vision model is SmolVLM 256M', /SmolVLM-256M-Instruct/i.test(tasks.VISION_MODELS.id), tasks.VISION_MODELS.id);
 check('text model is SmolLM 135M', /SmolLM-135M-Instruct/i.test(tasks.TEXT_MODELS.id), tasks.TEXT_MODELS.id);
+check('local translation uses the quantized multilingual M2M100 model',
+  tasks.TRANSLATION_MODEL.id === 'Xenova/m2m100_418M' && tasks.TRANSLATION_MODEL.dtype === 'q8');
+check('translation advertises 100 unique supported languages',
+  tasks.TRANSLATION_LANGUAGES.length === 100 &&
+  new Set(tasks.TRANSLATION_LANGUAGES.map((language) => language.id)).size === 100);
+check('translation accepts any supported source and target',
+  tasks.translationModelFor('fr') === tasks.TRANSLATION_MODEL && tasks.translationLanguageFor('hi'));
+check('translation refuses unsupported target languages', tasks.translationModelFor('xx') === null);
+check('translation input strips control characters and normalises spaces',
+  tasks.translationInput('  Hello\r\n\u0000world  ') === 'Hello\nworld');
+check('translation splits long text at readable boundaries',
+  tasks.translationChunks(('First sentence. Second sentence. ').repeat(50), 140).every((chunk) => chunk.length <= 140));
+check('translation records truncation past its input cap',
+  tasks.translationWasTruncated('x'.repeat(tasks.MAX_TRANSLATION_CHARS + 1)));
 check('Transformers.js exports the requested SmolVLM model class',
   typeof require('@huggingface/transformers').SmolVLMForConditionalGeneration === 'function');
 check('Transformers.js exports the causal LM class for SmolLM',
@@ -89,6 +103,8 @@ check('grounding prompt is empty without a query', tasks.visionRequest('ground',
 // ---------- summarisation ----------
 
 check('summary styles are non-empty', tasks.SUMMARY_STYLE_IDS.length >= 2);
+check('plain-language style is available for accessibility', tasks.summaryStyle('plain') === 'plain');
+check('plain-language style uses simple wording instructions', /simple everyday language/.test(tasks.SUMMARY_STYLES.plain));
 check('unknown style falls back to paragraph', tasks.summaryStyle('bogus') === 'paragraph');
 check('known style is kept', tasks.summaryStyle('bullets') === 'bullets');
 
@@ -174,6 +190,8 @@ check('the worker does not run on the main thread', !/require\(['"]@huggingface\
 
 const menu = require(path.join(ROOT, 'src', 'shell', 'menu-items.js'));
 const shellSrc = fs.readFileSync(path.join(ROOT, 'src', 'shell', 'shell.js'), 'utf8');
+const shellCss = fs.readFileSync(path.join(ROOT, 'src', 'shell', 'shell.css'), 'utf8');
+const themeEngineSrc = fs.readFileSync(path.join(ROOT, 'src', 'pages', 'theme-engine.js'), 'utf8');
 const preloadSrc = fs.readFileSync(path.join(ROOT, 'src', 'preload', 'shell.js'), 'utf8');
 const ipcSrc = fs.readFileSync(path.join(ROOT, 'src', 'main', 'shell-ipc.js'), 'utf8');
 
@@ -294,10 +312,11 @@ check('npm run models stages them', /node scripts\/fetch-models\.js/.test(pkg.sc
 check('the fetch script exists', fs.existsSync(path.join(ROOT, 'scripts', 'fetch-models.js')));
 
 const fetchSrc = fs.readFileSync(path.join(ROOT, 'scripts', 'fetch-models.js'), 'utf8');
-check('fetch-models downloads both models through Transformers.js',
+check('fetch-models stages the three local models through Transformers.js',
   /SmolVLMForConditionalGeneration\.from_pretrained/.test(fetchSrc) &&
   /AutoProcessor\.from_pretrained/.test(fetchSrc) &&
   /AutoModelForCausalLM\.from_pretrained/.test(fetchSrc) &&
+  /AutoModelForSeq2SeqLM\.from_pretrained/.test(fetchSrc) &&
   /AutoTokenizer\.from_pretrained/.test(fetchSrc));
 check('fetch-models stages into the cache dir, so the layout is the one the app reads',
   /env\.cacheDir = OUT/.test(fetchSrc));
@@ -306,7 +325,9 @@ check('fetch-models removes old model checkpoints only after the new downloads l
 check('fetch-models removes old model checkpoints only after new loads complete',
   /await stage\(t, text[\s\S]*?fs\.rmSync\(path\.join\(OUT, \.\.\.oldId\.split\('\/'\)\)/.test(fetchSrc));
 check('fetch-models refuses to settle for a half-finished run', /allowLocalModels = false/.test(fetchSrc));
-check('fetch-models lists both models', /VISION_MODELS/.test(fetchSrc) && /TEXT_MODELS/.test(fetchSrc));
+check('fetch-models validates required multilingual translation assets',
+  /translation\.requiredFiles/.test(fetchSrc) && /missingTranslationFiles/.test(fetchSrc) &&
+  /requiredFiles/.test(fs.readFileSync(path.join(ROOT, 'src', 'ai', 'tasks.js'), 'utf8')));
 
 check('the worker reads the bundled models first',
   /env\.localModelPath = workerData\.localModelPath/.test(workerSrc));
@@ -318,6 +339,23 @@ check('vision completion decodes only newly generated tokens',
   /promptLength = inputs\.input_ids\.dims[\s\S]{0,180}sequence\.slice\(promptLength\)/.test(workerSrc));
 check('SmolLM uses the requested local text checkpoint',
   /AutoModelForCausalLM\.from_pretrained\(spec\.id/.test(workerSrc));
+check('the worker loads M2M100 and sets the requested source and target codes',
+  /AutoModelForSeq2SeqLM\.from_pretrained\(spec\.id/.test(workerSrc) && /runTranslation/.test(workerSrc) &&
+  /_build_translation_inputs/.test(workerSrc) && /src_lang: job\.source/.test(workerSrc) && /tgt_lang: job\.target/.test(workerSrc) &&
+  /postProcessorConfig\.single/.test(workerSrc) && /item\.SpecialToken\.id = tokenizer\.lang_to_token\(job\.source\)/.test(workerSrc));
+check('AI menu offers a plain-language accessibility summary',
+  /ai-accessibility/.test(shellSrc) && /summariseActivePage\('plain', 'Plain-language summary'\)/.test(shellSrc));
+check('animation styles are selectable and include a reduced-motion path',
+  /animation-theme/.test(fs.readFileSync(path.join(ROOT, 'src', 'pages', 'settings.html'), 'utf8')) &&
+  /data-animation-theme="playful"/.test(shellCss) && /prefers-reduced-motion: reduce/.test(shellCss) &&
+  /animationTheme = animationThemes\.includes/.test(themeEngineSrc));
+check('new tabs are animated without disabling reduced-motion support',
+  /tab-entering/.test(shellSrc) && /tab-leaving/.test(shellSrc) && /matchMedia\('\(prefers-reduced-motion: reduce\)'\)/.test(shellSrc));
+check('AI menu offers a local threat-list lookup',
+  /ai-security-check/.test(shellSrc) && /securityCheckLocal\(WID\)/.test(shellSrc));
+check('local threat lookup uses cached lists without a network request',
+  /checkLocalUrl\(url\)/.test(fs.readFileSync(path.join(ROOT, 'src', 'main', 'security.js'), 'utf8')) &&
+  /security:check-local/.test(fs.readFileSync(path.join(ROOT, 'src', 'main', 'shell-ipc.js'), 'utf8')));
 check('the worker still allows a download for anything not bundled',
   /env\.allowLocalModels = true/.test(workerSrc) &&
   (workerSrc.match(/allowRemoteModels/g) || []).length === 1,
@@ -368,14 +406,14 @@ check('an error is handled before anything is treated as progress',
   !!msgHandler && msgHandler[0].indexOf("msg.type === 'error'") < msgHandler[0].indexOf('return notify(msg)'));
 check('the worker accepts anything carrying a kind',
   /msg\.type !== 'job' && !msg\.kind/.test(workerSrc) &&
-  /job\.kind === 'summary' \? await runSummary/.test(workerSrc));
+  /job\.kind === 'summary'/.test(workerSrc) && /job\.kind === 'translation'/.test(workerSrc));
 
 const releaseSrc = fs.readFileSync(path.join(ROOT, 'scripts', 'release.js'), 'utf8');
 check('a release refuses to build without the models', /function requireModels\(\)/.test(releaseSrc));
-check('a release checks the staged models match the task table',
-  /staged\.models\.some/.test(releaseSrc) && /VISION_MODELS/.test(releaseSrc));
+check('a release checks all staged models match the task table',
+  /staged\.models\.some/.test(releaseSrc) && /VISION_MODELS/.test(releaseSrc) && /TRANSLATION_MODEL/.test(releaseSrc));
 check('a release verifies the models reached the built app',
-  /function verifyPackagedModels\(\)/.test(releaseSrc) &&
+  /function verifyPackagedModels\(\)/.test(releaseSrc) && /TRANSLATION_MODEL/.test(releaseSrc) &&
   /win-unpacked', 'resources', 'models'/.test(releaseSrc));
 check('the release gates on both model steps',
   /requireModels\(\);[\s\S]{0,400}electron-builder/.test(releaseSrc) &&
@@ -425,10 +463,12 @@ check('npm test runs the AI end-to-end test', /electron test\/ai-ui\.test\.js/.t
 const staged = path.join(ROOT, 'resources', 'models');
 const oldVisionDir = path.join(staged, 'onnx-community', 'Florence-2-base-ft');
 const oldTextDir = path.join(staged, 'HuggingFaceTB', 'SmolLM2-135M-Instruct');
+const oldTranslationDir = path.join(staged, 'Xenova', 'opus-mt-en-ROMANCE');
 const stagedMatchesRequested = fs.existsSync(path.join(staged, ...tasks.VISION_MODELS.id.split('/'))) &&
-  fs.existsSync(path.join(staged, ...tasks.TEXT_MODELS.id.split('/')));
+  fs.existsSync(path.join(staged, ...tasks.TEXT_MODELS.id.split('/'))) &&
+  fs.existsSync(path.join(staged, ...tasks.TRANSLATION_MODEL.id.split('/')));
 if (fs.existsSync(staged) && stagedMatchesRequested) {
-  for (const spec of [tasks.VISION_MODELS, tasks.TEXT_MODELS]) {
+  for (const spec of [tasks.VISION_MODELS, tasks.TEXT_MODELS, tasks.TRANSLATION_MODEL]) {
     const dir = path.join(staged, ...spec.id.split('/'));
     let onnx = [];
     try { onnx = fs.readdirSync(path.join(dir, 'onnx')); } catch (_) { onnx = []; }
@@ -439,20 +479,28 @@ if (fs.existsSync(staged) && stagedMatchesRequested) {
       : onnx.some((f) => f.includes('q4') || f.includes('quantized'));
     check('staged ' + spec.label + ' matches its declared dtype (' + spec.dtype + ')', matches, JSON.stringify(onnx));
   }
+  for (const file of tasks.TRANSLATION_MODEL.requiredFiles) {
+    check('staged translation requires ' + file,
+      fs.existsSync(path.join(staged, ...tasks.TRANSLATION_MODEL.id.split('/'), ...file.split('/'))));
+  }
   const marker = path.join(staged, 'prism-models.json');
   check('the staged models are described by a marker file', fs.existsSync(marker));
   if (fs.existsSync(marker)) {
     const described = JSON.parse(fs.readFileSync(marker, 'utf8'));
     check('the marker lists the models the app asks for',
-      [tasks.VISION_MODELS, tasks.TEXT_MODELS].every((s) =>
+      [tasks.VISION_MODELS, tasks.TEXT_MODELS, tasks.TRANSLATION_MODEL].every((s) =>
         described.models.some((m) => m.id === s.id && m.dtype === s.dtype)));
+    check('the translation model staged its quantized ONNX assets',
+      tasks.TRANSLATION_MODEL.requiredFiles.every((file) =>
+        fs.existsSync(path.join(staged, ...tasks.TRANSLATION_MODEL.id.split('/'), ...file.split('/')))));
     check('the marker records a plausible size', described.bytes > 50 * 1024 * 1024,
+
       String(described.bytes));
   }
 } else {
-  if (fs.existsSync(staged) && (fs.existsSync(oldVisionDir) || fs.existsSync(oldTextDir))) {
+  if (fs.existsSync(staged) && (fs.existsSync(oldVisionDir) || fs.existsSync(oldTextDir) || fs.existsSync(oldTranslationDir))) {
     check('staged models are current for the requested model ids', false,
-      'run `npm run models` to stage SmolVLM-256M and SmolLM-135M instead of the previous Florence/SmolLM2 set');
+      'run `npm run models` to stage SmolVLM, SmolLM and M2M100');
   } else {
     console.log('  (resources/models not staged - run `npm run models` to check the staged layout too)');
   }

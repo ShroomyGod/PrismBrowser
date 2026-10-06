@@ -480,6 +480,8 @@
     const a = appearance || {};
     const resolved = resolve(a.themePreset || DEFAULT_PRESET);
     const accessibility = a.accessibility || {};
+    const animationThemes = ['basic', 'smooth', 'playful', 'off'];
+    const animationTheme = animationThemes.includes(a.animationTheme) ? a.animationTheme : 'basic';
     const vars = Object.assign({}, resolved.vars);
     if (accessibility.contrast === 'high') {
       // High contrast flattens the ramp: every muted value becomes the main
@@ -496,6 +498,7 @@
     target.dataset.theme = resolved.dark ? 'dark' : 'light';
     target.dataset.themePreset = resolved.id;
     target.dataset.motion = resolved.motion;
+    target.dataset.animationTheme = animationTheme;
     target.dataset.contrast = accessibility.contrast === 'high' ? 'high' : 'normal';
     target.dataset.largeTargets = accessibility.largerTargets ? 'true' : 'false';
     target.dataset.focusVisible = accessibility.focusIndicators === false ? 'subtle' : 'strong';

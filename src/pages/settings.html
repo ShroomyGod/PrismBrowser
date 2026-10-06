@@ -35,6 +35,15 @@
       <nav id="theme-categories" class="theme-categories" aria-label="Theme categories"></nav>
       <div id="theme-grid" class="theme-grid" role="group" aria-label="Themes"></div>
     </div>
+    <div class="setting-line">
+      <div class="info"><label for="animation-theme"><b>Animation theme</b></label><div class="muted">Choose how tabs and browser controls animate.</div></div>
+      <select id="animation-theme">
+        <option value="basic">Basic (default)</option>
+        <option value="smooth">Smooth</option>
+        <option value="playful">Playful</option>
+        <option value="off">Off</option>
+      </select>
+    </div>
     <div id="line-site-theme" class="setting-line">
       <div class="info"><b>Site theme</b><div class="muted">Never recolors page content. Auto only follows the browser on sites that opt in with a color-scheme declaration.</div></div>
       <select id="siteTheme">
@@ -236,6 +245,8 @@
     activePreset = PrismTheme.preset(appearance.themePreset).id;
     Object.assign(accessibility, { textScale: 100, contrast: 'normal', largerTargets: false, reducedMotion: 'system', focusIndicators: true }, appearance.accessibility || {});
     $('siteTheme').value = s.appearance.siteTheme || 'auto';
+    $('animation-theme').value = ['basic', 'smooth', 'playful', 'off'].includes(s.appearance.animationTheme)
+      ? s.appearance.animationTheme : 'basic';
     $('text-scale').value = accessibility.textScale;
     $('text-scale-value').value = accessibility.textScale + '%';
     $('contrast').value = accessibility.contrast;
@@ -347,6 +358,9 @@
   }
   $('siteTheme').value = s.appearance.siteTheme || 'auto';
   $('siteTheme').addEventListener('change', () => updateAppearance({ siteTheme: $('siteTheme').value }));
+  $('animation-theme').value = ['basic', 'smooth', 'playful', 'off'].includes(s.appearance.animationTheme)
+    ? s.appearance.animationTheme : 'basic';
+  $('animation-theme').addEventListener('change', () => updateAppearance({ animationTheme: $('animation-theme').value }));
   // "Surprise me" jumps to another curated theme rather than inventing one.
   $('random-theme').addEventListener('click', () => selectPreset(PrismTheme.randomPresetId(activePreset)));
   const bb = PrismUI.switchRow('Bookmarks bar', 'Show the bookmarks strip under the toolbar.', s.appearance.bookmarksBar, (v) => updateAppearance({ bookmarksBar: v }));

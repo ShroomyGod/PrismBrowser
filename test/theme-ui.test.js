@@ -46,6 +46,7 @@ app.whenReady().then(async () => {
     settings.set({ appearance: {
       theme: 'dark',
       themePreset: 'forest',
+      animationTheme: 'playful',
       accessibility: { textScale: 115, contrast: 'high', largerTargets: true, reducedMotion: 'reduce', focusIndicators: true }
     } });
     const wid = tabs.createWindow({ urls: ['prism://settings'] });
@@ -73,6 +74,7 @@ app.whenReady().then(async () => {
       contrast: document.documentElement.dataset.contrast,
       targets: document.documentElement.dataset.largeTargets,
       motion: document.documentElement.dataset.reduceMotion,
+      animationTheme: document.documentElement.dataset.animationTheme,
       scaledFont: getComputedStyle(document.body).fontSize
     })`);
     if (initial.api !== 'object' || initial.count !== initial.presets || initial.count < 100 ||
@@ -80,7 +82,7 @@ app.whenReady().then(async () => {
         initial.selectedId !== 'forest' || initial.retired || initial.countLabel !== initial.presets + ' themes' ||
         initial.theme !== 'dark' || initial.preset !== 'forest' || initial.accent !== '#7bd88f' ||
         initial.contrast !== 'high' || initial.targets !== 'true' || initial.motion !== 'reduce' ||
-        initial.scaledFont !== '16.1px') {
+        initial.animationTheme !== 'playful' || initial.scaledFont !== '16.1px') {
       throw new Error('Initial settings appearance/accessibility did not apply: ' + JSON.stringify(initial));
     }
 
@@ -131,6 +133,30 @@ app.whenReady().then(async () => {
       propagated = seen[0] === 'paper' && seen[1] === 'paper';
     }
     if (!propagated) throw new Error('Choosing a theme in the shell never reached the Settings page');
+    await page.executeJavaScript(`
+      const animation = document.getElementById('animation-theme');
+      animation.value = 'smooth'; animation.dispatchEvent(new Event('change', { bubbles: true }));
+      true;
+    `);
+    await wait(400);
+    const animationSetting = await page.executeJavaScript(`document.documentElement.dataset.animationTheme`);
+    if (animationSetting !== 'smooth' || settings.all().appearance.animationTheme !== 'smooth') {
+      throw new Error('Selecting an animation theme did not persist: ' + animationSetting);
+    }
+    const animatedTab = tabs.createTab(wid, 'prism://newtab', { background: true });
+    let enteringTab = false;
+    for (let attempt = 0; attempt < 40 && !enteringTab; attempt++) {
+      enteringTab = await shellWc.executeJavaScript(`!!document.querySelector('.tab[data-tab-id="${animatedTab}"].tab-entering')`);
+      if (!enteringTab) await wait(10);
+    }
+    if (!enteringTab) throw new Error('New tab did not animate into the tab strip');
+    tabs.closeTab(animatedTab);
+    let leavingTab = false;
+    for (let attempt = 0; attempt < 15 && !leavingTab; attempt++) {
+      leavingTab = await shellWc.executeJavaScript(`!!document.querySelector('.tab[data-tab-id="${animatedTab}"].tab-leaving')`);
+      if (!leavingTab) await wait(10);
+    }
+    if (!leavingTab) throw new Error('Closed tab did not animate out of the tab strip');
 
     const shell = await shellWc.executeJavaScript(`({
       api: typeof window.PrismTheme,
@@ -149,6 +175,7 @@ app.whenReady().then(async () => {
       accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(),
       contrast: document.documentElement.dataset.contrast,
       motion: document.documentElement.dataset.reduceMotion,
+      animationTheme: document.documentElement.dataset.animationTheme,
       focus: document.documentElement.dataset.focusVisible
     })`);
     const stored = settings.all().appearance;
@@ -160,7 +187,8 @@ app.whenReady().then(async () => {
       pageState.count === 124 && pageState.theme === 'light' && pageState.preset === 'paper' &&
       pageState.contrast === 'normal' && pageState.motion === 'allow' && pageState.focus === 'strong' &&
       stored.theme === 'light' && stored.themePreset === 'paper' &&
-      stored.accessibility.reducedMotion === 'no-preference';
+      stored.accessibility.reducedMotion === 'no-preference' &&
+      stored.animationTheme === 'smooth';
     console.log(ok ? 'THEME_UI_OK' : 'THEME_UI_FAIL');
 
     settings.set({ appearance: originalAppearance });

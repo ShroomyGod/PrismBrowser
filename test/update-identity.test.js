@@ -1,7 +1,9 @@
 'use strict';
 
 const assert = require('assert');
+const packageJson = require('../package.json');
 const { compareVersions, inspect, accept } = require('../src/main/update-identity');
+assert.strictEqual(packageJson.version, '1.1.0', 'Prism version remains 1.1.0');
 
 assert.strictEqual(compareVersions('1.2.0', '1.2.0'), 0);
 assert(compareVersions('1.2.1', '1.2.0') > 0);

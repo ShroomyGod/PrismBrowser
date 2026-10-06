@@ -386,9 +386,14 @@ function check({ silent } = {}) {
 
 function runInstaller(exe) {
   try {
-    // /S per-user silent, matching the NSIS config (allowElevation: false).
-    // NSIS relaunches the app when it finishes.
-    spawn(`"${exe}"`, ['/S'], { shell: true, detached: true, stdio: 'ignore' }).unref();
+    // NSIS recognizes electron-builder's /S and --updated flags. The latter
+    // preserves the existing install path and lets the assisted installer
+    // restart the same app after replacing it. Never use shell quoting here:
+    // the installer path is a single argv item, even when it contains spaces.
+    const installerPath = path.resolve(exe);
+    // --force-run is required with the assisted NSIS installer: it closes the
+    // final page silently and otherwise would leave Prism shut down.
+    spawn(installerPath, ['/S', '--updated', '--force-run'], { shell: false, detached: true, stdio: 'ignore' }).unref();
     setTimeout(() => { try { app.quit(); } catch (_) {} }, 750);
     return true;
   } catch (e) {

@@ -149,6 +149,29 @@ class Security {
     } catch (e) { return null; }
   }
 
+  checkLocalUrl(url) {
+    const host = hostOf(url);
+    if (!host) return { status: 'invalid' };
+    const lowerHost = host.toLowerCase();
+    if (this.exceptions.has(lowerHost)) {
+      return { status: 'exception', host: lowerHost, hostEntries: this.hosts.size, urlEntries: this.urls.size };
+    }
+    let listedHost = lowerHost;
+    while (listedHost) {
+      if (this.hosts.has(listedHost)) {
+        return { status: 'match', matchType: 'domain', host: lowerHost, hostEntries: this.hosts.size, urlEntries: this.urls.size };
+      }
+      const dot = listedHost.indexOf('.');
+      if (dot < 0) break;
+      listedHost = listedHost.slice(dot + 1);
+    }
+    const bare = String(url).split('#')[0].split('?')[0];
+    if (this.urls.has(bare)) {
+      return { status: 'match', matchType: 'URL', host: lowerHost, hostEntries: this.hosts.size, urlEntries: this.urls.size };
+    }
+    return { status: 'clear', host: lowerHost, hostEntries: this.hosts.size, urlEntries: this.urls.size };
+  }
+
   async checkUrl(url) {
     const cfg = settings.all().security;
     if (!cfg.malwareEnabled) return null;
@@ -156,7 +179,13 @@ class Security {
     if (!host) return null;
     if (this.exceptions.has(host)) return null;
     if (/^(localhost|127\.|0\.0\.0\.0|\[::1\]|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host)) return null;
-    if (this.hosts.has(host)) return { source: 'community blocklists (URLhaus / Phishing Army / OpenPhish)', threat: 'Malicious site' };
+    let listedHost = host;
+    while (listedHost) {
+      if (this.hosts.has(listedHost)) return { source: 'community blocklists (URLhaus / Phishing Army / OpenPhish)', threat: 'Malicious site' };
+      const dot = listedHost.indexOf('.');
+      if (dot < 0) break;
+      listedHost = listedHost.slice(dot + 1);
+    }
     const bare = url.split('#')[0].split('?')[0];
     if (this.urls.has(bare)) return { source: 'community blocklists (URLhaus / Phishing Army / OpenPhish)', threat: 'Malicious page' };
     if (cfg.safeBrowsingKey) {
@@ -167,7 +196,7 @@ class Security {
   }
 
   addException(host) {
-    this.exceptions.add(host);
+    this.exceptions.add(String(host || '').toLowerCase());
     if (this.onEvent) this.onEvent('security-exception-added', { host });
   }
 

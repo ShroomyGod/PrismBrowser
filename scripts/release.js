@@ -14,8 +14,11 @@
 //   5. verify the expected installer + blockmap landed
 //
 // Usage:
-//   npm run release                     build and publish, named from the notes
+//   npm run release                     build, commit/push source, and publish if token is set
 //   npm run release -- --name Spectrum  override the chosen name for this build
+//
+// A release commit and branch push follow a verified local build; GitHub
+// Releases publishing remains optional and requires a GitHub token.
 //
 // A release is published as "Prism <version> — <name>". The name is derived
 // from the features in scripts/release-notes.md, which is also what the
@@ -33,6 +36,7 @@ const {
   githubApiRequest,
   replaceExistingRelease
 } = require('./release-helper');
+const releaseGit = require('./release-git');
 
 const ROOT = path.join(__dirname, '..');
 const ASSETS = path.join(ROOT, 'assets');
@@ -362,15 +366,16 @@ function verifyArtifacts() {
 if (ARGS.help) {
   const preview = resolveReleaseName({ requested: ARGS.name, notesText: NOTES_TEMPLATE });
   console.log('Prism release script\n');
-  console.log('  npm run release                     build, then publish as "' + releaseTitle(VERSION, preview.name) + '"');
-  console.log('  npm run release -- --name Spectrum  publish with an explicit name');
+  console.log('  npm run release                     build, commit/push the current branch, then publish as "' + releaseTitle(VERSION, preview.name) + '"');
+  console.log('  npm run release -- --name Spectrum  build, commit/push, then publish with an explicit name');
   console.log('  npm run release -- --help           show this message\n');
   console.log('  The name is chosen automatically from the "New in this release"');
   console.log('  section of scripts/release-notes.md, and becomes the GitHub release');
   console.log('  title and the notes heading. Override it for one build with --name.');
   console.log('  The tag stays v' + VERSION + ': the updater reads the version from');
   console.log('  latest.yml, falling back to the tag, and never from the title.\n');
-  console.log('  Set GITHUB_TOKEN to publish. Without it the build is produced but nothing is uploaded.\n');
+  console.log('  Release source changes are committed and the current branch is pushed after a successful build.\n');
+  console.log('  Set GITHUB_TOKEN to publish the GitHub release. Without it, the local build and Git push still run, but no release is uploaded.\n');
   process.exit(0);
 }
 
@@ -379,6 +384,16 @@ log('='.repeat(46));
 
 if (!fs.existsSync(path.join(ROOT, 'node_modules', 'electron-builder'))) {
   fail('electron-builder is not installed. Run `npm install` first.');
+}
+
+// Refuse a detached checkout, staged changes, or missing remote BEFORE the
+// build cleanup starts. After the installer is verified, source changes are
+// committed and the current branch is pushed before any GitHub release is replaced.
+try {
+  const gitState = releaseGit.checkGitReady(ROOT);
+  log('  Git source commit will push branch ' + gitState.branch + ' to ' + gitState.remote);
+} catch (error) {
+  fail('Git publishing is not ready: ' + error.message);
 }
 
 generateIcons();
@@ -437,8 +452,8 @@ function ensureTag() {
   }
 }
 
-// Prism Vision and the summariser ship their weights inside the installer so an
-// installed Prism works offline on first use. Build without them and the feature
+// Prism Vision, the summariser and local translation ship their weights inside
+// the installer so an installed Prism works offline on first use. Build without them and the feature
 // still "works" — by quietly downloading hundreds of MB the first time anyone clicks it —
 // so check before the build starts rather than discovering it after.
 function requireModels() {
@@ -446,7 +461,7 @@ function requireModels() {
   const tasks = require('../src/ai/tasks');
   if (!fs.existsSync(marker)) {
     fail('The AI models are not staged for this build.\n' +
-         '  Prism bundles SmolVLM-256M and SmolLM-135M so they work offline.\n' +
+         '  Prism bundles SmolVLM, SmolLM and M2M100 so local AI works offline.\n' +
          '  Run:  npm run models');
   }
   let staged;
@@ -456,7 +471,12 @@ function requireModels() {
     fail('resources/models/prism-models.json is unreadable: ' + err.message + '\n' +
          '  Run:  npm run models -- --force');
   }
-  const wanted = [tasks.VISION_MODELS, tasks.TEXT_MODELS];
+  const wanted = [tasks.VISION_MODELS, tasks.TEXT_MODELS, tasks.TRANSLATION_MODEL];
+  const oldTranslation = staged.models.find((m) => m.id === 'Xenova/opus-mt-en-es');
+  if (oldTranslation) {
+    fail('The staged models still contain the English-to-Spanish-only translator.\n' +
+         '  Run:  npm run models');
+  }
   for (const spec of wanted) {
     if (!staged.models.some((m) => m.id === spec.id && m.dtype === spec.dtype)) {
       fail('The staged models do not match src/ai/tasks.js (' + spec.id + ' ' + spec.dtype + ').\n' +
@@ -479,7 +499,7 @@ function verifyPackagedModels() {
   }
   const tasks = require('../src/ai/tasks');
   const missing = [];
-  for (const spec of [tasks.VISION_MODELS, tasks.TEXT_MODELS]) {
+  for (const spec of [tasks.VISION_MODELS, tasks.TEXT_MODELS, tasks.TRANSLATION_MODEL]) {
     // "<resources>/models/<owner>/<repo>" — the layout transformers.js looks in.
     const modelDir = path.join(dir, ...spec.id.split('/'));
     const onnx = path.join(modelDir, 'onnx');
@@ -487,6 +507,11 @@ function verifyPackagedModels() {
     try { sessions = fs.readdirSync(onnx); } catch (_) { sessions = []; }
     if (sessions.length === 0) missing.push(spec.id + ' (no onnx/ sessions)');
     else if (!fs.existsSync(path.join(modelDir, 'config.json'))) missing.push(spec.id + ' (config.json)');
+    if (spec.requiredFiles) {
+      for (const file of spec.requiredFiles) {
+        if (!fs.existsSync(path.join(modelDir, ...file.split('/')))) missing.push(spec.id + ' (' + file + ')');
+      }
+    }
   }
   if (missing.length) {
     fail('These models are missing from the built app:\n  ' + missing.join('\n  ') + '\n' +
@@ -519,6 +544,17 @@ run('npx', ['electron-builder', '--win', 'nsis', 'portable']);
 verifyArtifacts();
 verifyPackagedPages();
 verifyPackagedModels();
+
+try {
+  const result = releaseGit.commitAndPush(ROOT, VERSION);
+  if (result.committed) log('\n  committed source changes as "' + result.commit + '"');
+  else log('\n  source tree already committed; no new commit was needed');
+  log('  pushed branch ' + result.branch + ' to ' + result.remote);
+} catch (error) {
+  fail('Could not commit and push release source: ' + error.message + '\n' +
+       '  The local installer build is complete, but GitHub publishing was not started.');
+}
+
 log('\nDone. Prism ' + VERSION + ' installer and blockmap are in the project root.');
 
 if (!GH_TOKEN) {

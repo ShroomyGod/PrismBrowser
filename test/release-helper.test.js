@@ -140,6 +140,8 @@ if (validateSchema) {
 // after cleanStale() (which deletes the previous build's installer before
 // printing help).
 const releaseScript = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'release.js'), 'utf8');
+const releaseGitScript = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'release-git.js'), 'utf8');
+const readme = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8');
 assert(
   releaseScript.includes('await renamePublishedRelease(RELEASE.name)'),
   'the release script names the published release'
@@ -159,6 +161,20 @@ assert(
 // The name is chosen unattended, so the release must never stop to ask. A prompt
 // left in place would hang any run without an attached terminal.
 assert(!/readline|askLineSync|askForName/.test(releaseScript), 'the release never prompts for a name');
+assert(/releaseGit\.checkGitReady\(ROOT\)/.test(releaseScript),
+  'Git branch/index/remote readiness is checked before build side effects');
+assert(/releaseGit\.commitAndPush\(ROOT, VERSION\)/.test(releaseScript),
+  'a successful local build commits and pushes the current source branch');
+assert(releaseScript.indexOf('verifyArtifacts();') < releaseScript.indexOf('releaseGit.commitAndPush(ROOT, VERSION)'),
+  'source is committed and pushed only after installer verification');
+assert(releaseScript.indexOf('releaseGit.commitAndPush(ROOT, VERSION)') < releaseScript.indexOf('if (!GH_TOKEN)'),
+  'branch source is pushed even when GitHub Releases publishing is not configured');
+assert(/Generated build artifacts are staged/.test(releaseGitScript) && /detached/.test(releaseGitScript),
+  'release git automation refuses staged build outputs and detached HEADs while allowing staged source');
+assert(/\*\.nsis\.7z/.test(releaseGitScript) && /latest\.yml/.test(releaseGitScript),
+  'generated installers and updater metadata are excluded from the source commit');
+assert(/commits source changes and pushes the current branch/.test(readme),
+  'README explains that releases commit and push source automatically');
 
 // The updater is what a named release must not break. It asks GitHub for
 // /releases/latest and reads the authoritative version out of latest.yml, so

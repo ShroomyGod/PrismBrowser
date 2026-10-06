@@ -35,6 +35,112 @@
     dtype: 'q8'
   };
 
+  // M2M100 translates directly between 100 languages. The Xenova ONNX port is
+  // MIT-licensed and quantized for local CPU inference; it supports language
+  // tokens listed below (ISO 639-1/3 codes), not arbitrary language guesses.
+  const TRANSLATION_MODEL = {
+    id: 'Xenova/m2m100_418M',
+    label: 'M2M100 · 100 languages',
+    dtype: 'q8',
+    source: 'en',
+    target: 'es',
+    requiredFiles: [
+      'config.json',
+      'tokenizer.json',
+      'onnx/encoder_model_quantized.onnx',
+      'onnx/decoder_model_merged_quantized.onnx'
+    ]
+  };
+  const TRANSLATION_LANGUAGE_CODES = [
+    'af', 'am', 'ar', 'ast', 'az', 'ba', 'be', 'bg', 'bn', 'br', 'bs', 'ca', 'ceb', 'cs', 'cy',
+    'da', 'de', 'el', 'en', 'es', 'et', 'fa', 'ff', 'fi', 'fr', 'fy', 'ga', 'gd', 'gl', 'gu',
+    'ha', 'he', 'hi', 'hr', 'ht', 'hu', 'hy', 'id', 'ig', 'ilo', 'is', 'it', 'ja', 'jv', 'ka',
+    'kk', 'km', 'kn', 'ko', 'lb', 'lg', 'ln', 'lo', 'lt', 'lv', 'mg', 'mk', 'ml', 'mn', 'mr',
+    'ms', 'my', 'ne', 'nl', 'no', 'ns', 'oc', 'or', 'pa', 'pl', 'ps', 'pt', 'ro', 'ru', 'sd',
+    'si', 'sk', 'sl', 'so', 'sq', 'sr', 'ss', 'su', 'sv', 'sw', 'ta', 'th', 'tl', 'tn', 'tr',
+    'uk', 'ur', 'uz', 'vi', 'wo', 'xh', 'yi', 'yo', 'zh', 'zu'
+  ];
+  const MAX_TRANSLATION_CHARS = 24000;
+  const MAX_TRANSLATION_CHUNK = 700;
+  const LANGUAGE_LABELS = {
+    af: 'Afrikaans', am: 'Amharic', ar: 'Arabic', ast: 'Asturian', az: 'Azerbaijani', ba: 'Bashkir',
+    be: 'Belarusian', bg: 'Bulgarian', bn: 'Bengali', br: 'Breton', bs: 'Bosnian', ca: 'Catalan',
+    ceb: 'Cebuano', cs: 'Czech', cy: 'Welsh', da: 'Danish', de: 'German', el: 'Greek', en: 'English',
+    es: 'Spanish', et: 'Estonian', fa: 'Persian', ff: 'Fula', fi: 'Finnish', fr: 'French',
+    fy: 'Western Frisian', ga: 'Irish', gd: 'Scottish Gaelic', gl: 'Galician', gu: 'Gujarati',
+    ha: 'Hausa', he: 'Hebrew', hi: 'Hindi', hr: 'Croatian', ht: 'Haitian Creole', hu: 'Hungarian',
+    hy: 'Armenian', id: 'Indonesian', ig: 'Igbo', ilo: 'Iloko', is: 'Icelandic', it: 'Italian',
+    ja: 'Japanese', jv: 'Javanese', ka: 'Georgian', kk: 'Kazakh', km: 'Khmer', kn: 'Kannada',
+    ko: 'Korean', lb: 'Luxembourgish', lg: 'Ganda', ln: 'Lingala', lo: 'Lao', lt: 'Lithuanian',
+    lv: 'Latvian', mg: 'Malagasy', mk: 'Macedonian', ml: 'Malayalam', mn: 'Mongolian', mr: 'Marathi',
+    ms: 'Malay', my: 'Burmese', ne: 'Nepali', nl: 'Dutch', no: 'Norwegian', ns: 'Northern Sotho',
+    oc: 'Occitan', or: 'Odia', pa: 'Punjabi', pl: 'Polish', ps: 'Pashto', pt: 'Portuguese',
+    ro: 'Romanian', ru: 'Russian', sd: 'Sindhi', si: 'Sinhala', sk: 'Slovak', sl: 'Slovenian',
+    so: 'Somali', sq: 'Albanian', sr: 'Serbian', ss: 'Swati', su: 'Sundanese', sv: 'Swedish',
+    sw: 'Swahili', ta: 'Tamil', th: 'Thai', tl: 'Tagalog', tn: 'Tswana', tr: 'Turkish',
+    uk: 'Ukrainian', ur: 'Urdu', uz: 'Uzbek', vi: 'Vietnamese', wo: 'Wolof', xh: 'Xhosa',
+    yi: 'Yiddish', yo: 'Yoruba', zh: 'Chinese', zu: 'Zulu'
+  };
+  const TRANSLATION_LANGUAGES = TRANSLATION_LANGUAGE_CODES.map((id) => ({
+    id,
+    label: LANGUAGE_LABELS[id]
+  })).sort((a, b) => a.label.localeCompare(b.label));
+  const TRANSLATION_DEFAULT_SOURCE = 'en';
+  const TRANSLATION_DEFAULT_TARGET = 'es';
+  const TRANSLATION_DEFAULT = { source: TRANSLATION_DEFAULT_SOURCE, target: TRANSLATION_DEFAULT_TARGET };
+
+  function translationInput(text) {
+    return (typeof text === 'string' ? text : '')
+      .replace(/\r\n?/g, '\n')
+      .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
+      .replace(/[ \t]+/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+      .slice(0, MAX_TRANSLATION_CHARS);
+  }
+
+  function translationWasTruncated(text) {
+    if (typeof text !== 'string') return false;
+    const clean = text
+      .replace(/\r\n?/g, '\n')
+      .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
+      .replace(/[ \t]+/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+    return clean.length > MAX_TRANSLATION_CHARS;
+  }
+
+  function translationChunks(text, maxLength) {
+    const input = translationInput(text);
+    const limit = Math.max(100, Number(maxLength) || MAX_TRANSLATION_CHUNK);
+    const chunks = [];
+    let rest = input;
+    while (rest.length > limit) {
+      let end = Math.max(rest.lastIndexOf('\n\n', limit), rest.lastIndexOf('\n', limit));
+      const sentence = Math.max(rest.lastIndexOf('. ', limit), rest.lastIndexOf('! ', limit), rest.lastIndexOf('? ', limit));
+      if (sentence > limit * 0.45) end = Math.max(end, sentence + 1);
+      if (end < limit * 0.45) end = rest.lastIndexOf(' ', limit);
+      if (end <= 0) end = limit;
+      const chunk = rest.slice(0, end).trim();
+      if (chunk) chunks.push(chunk);
+      rest = rest.slice(end).trim();
+    }
+    if (rest) chunks.push(rest);
+    return chunks;
+  }
+
+  function translationLanguageFor(id) {
+    return TRANSLATION_LANGUAGES.find((language) => language.id === id) || null;
+  }
+
+  function translationModelFor(target) {
+    return translationLanguageFor(target) ? TRANSLATION_MODEL : null;
+  }
+
+  function translationTooShort(text) {
+    return translationInput(text).length < 2;
+  }
+
   function visionTask(id) {
     return VISION_TASKS.find((t) => t.id === id) || null;
   }
@@ -99,7 +205,8 @@
   const SUMMARY_STYLES = {
     paragraph: 'Summarise the following in three or four sentences. Reply with the summary only.',
     bullets: 'Summarise the following as five short bullet points. Reply with the bullets only.',
-    tldr: 'Summarise the following in one sentence. Reply with that sentence only.'
+    tldr: 'Summarise the following in one sentence. Reply with that sentence only.',
+    plain: 'Explain the following in simple everyday language for a reader who may find dense text difficult. Keep the important facts, define unavoidable jargon briefly, and use short sentences. Reply with the explanation only.'
   };
 
   function summaryStyle(id) {
@@ -149,6 +256,20 @@
     VISION_TASKS,
     VISION_MODELS,
     TEXT_MODELS,
+    TRANSLATION_MODEL,
+    TRANSLATION_LANGUAGES,
+    TRANSLATION_LANGUAGE_CODES,
+    TRANSLATION_DEFAULT_SOURCE,
+    TRANSLATION_DEFAULT_TARGET,
+    TRANSLATION_DEFAULT,
+    MAX_TRANSLATION_CHARS,
+    MAX_TRANSLATION_CHUNK,
+    translationInput,
+    translationWasTruncated,
+    translationChunks,
+    translationLanguageFor,
+    translationModelFor,
+    translationTooShort,
     SUMMARY_STYLES,
     SUMMARY_STYLE_IDS,
     MAX_QUERY,

@@ -352,6 +352,43 @@ function summarise(text, options) {
   return enqueue({ kind: 'summary', text: String(text || ''), style: opts.style || 'paragraph' });
 }
 
+function translate(text, options) {
+  const opts = options || {};
+  const source = opts.source || tasks.TRANSLATION_DEFAULT_SOURCE;
+  const target = opts.target || tasks.TRANSLATION_DEFAULT_TARGET;
+  if (!tasks.translationLanguageFor(source) || !tasks.translationModelFor(target)) {
+    return Promise.reject(new Error('Choose a language supported by the local translation model.'));
+  }
+  if (source === target) return Promise.reject(new Error('Choose two different languages to translate.'));
+  const input = tasks.translationInput(String(text || ''));
+  if (tasks.translationTooShort(input)) return Promise.reject(new Error('There is no readable page text to translate.'));
+  return stageBundledTranslation().then(() => enqueue({
+    kind: 'translation',
+    text: input,
+    truncated: tasks.translationWasTruncated(String(text || '')),
+    source,
+    target
+  }));
+}
+
+function translationLanguages() {
+  return tasks.TRANSLATION_LANGUAGES.slice();
+}
+
+function stageBundledTranslation(options) {
+  const opts = options || {};
+  const root = opts.root || bundledModelsDir();
+  if (!root) return Promise.reject(new Error('Bundled translation model was not found.'));
+  const modelRoot = path.join(root, ...tasks.TRANSLATION_MODEL.id.split('/'));
+  const required = tasks.TRANSLATION_MODEL.requiredFiles.map((file) => path.join(modelRoot, ...file.split('/')));
+  const missing = required.filter((file) => !fs.existsSync(file));
+  if (missing.length) return Promise.reject(new Error('The bundled translation model is incomplete. Missing: ' + path.basename(missing[0])));
+  // Transformers.js is already pointed at this installed model root. Return the
+  // validated path for diagnostics; inference reads it in place and does not
+  // copy the model into (or count it against) the profile download cache.
+  return Promise.resolve(modelRoot);
+}
+
 function clearCache() {
   // Must stop the worker first: transformers.js holds open handles to the
   // files, and Windows refuses to delete a file that is mapped.
@@ -375,6 +412,9 @@ function clearCache() {
 module.exports = {
   analyseImage,
   summarise,
+  translate,
+  translationLanguages,
+  stageBundledTranslation,
   status,
   cacheStats,
   clearCache,

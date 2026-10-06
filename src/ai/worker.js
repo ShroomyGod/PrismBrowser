@@ -20,6 +20,7 @@ const tasks = require('./tasks');
 let transformers = null;
 let vision = { model: null, processor: null };
 let text = { model: null, tokenizer: null };
+let translation = { model: null, tokenizer: null };
 let loading = null;
 // Progress is tagged with the job it belongs to so the main process can keep a
 // downloading job alive without also masking a stall in an unrelated one.
@@ -134,6 +135,77 @@ function renderVision(text) {
   return tasks.cleanOutput(String(text || '').replace(/^assistant\s*:\s*/i, ''));
 }
 
+async function ensureTranslation() {
+  if (translation.model && translation.tokenizer) return translation;
+  if (loading === 'translation') return loading;
+  loading = (async () => {
+    const t = loadTransformers();
+    const spec = tasks.TRANSLATION_MODEL;
+    progress({ stage: 'loading', model: spec.label, detail: 'M2M100 ONNX · 100 languages' });
+    const [model, tokenizer] = await Promise.all([
+      t.AutoModelForSeq2SeqLM.from_pretrained(spec.id, { dtype: spec.dtype }),
+      t.AutoTokenizer.from_pretrained(spec.id)
+    ]);
+    translation = { model, tokenizer };
+    progress({ stage: 'loaded', model: spec.label });
+    return translation;
+  })();
+  try {
+    return await loading;
+  } finally {
+    loading = null;
+  }
+}
+
+async function runTranslation(job) {
+  const spec = tasks.translationModelFor(job.target);
+  if (!spec) throw new Error('This translation language is not available offline yet.');
+  const chunks = tasks.translationChunks(job.text);
+  if (!chunks.length) throw new Error('There is no readable page text to translate.');
+  const { model, tokenizer } = await ensureTranslation();
+  const translated = [];
+  const postProcessor = tokenizer._tokenizer && tokenizer._tokenizer.post_processor;
+  const postProcessorConfig = postProcessor && postProcessor.config;
+  const setSourceLanguage = () => {
+    if (!postProcessorConfig || !Array.isArray(postProcessorConfig.single)) return false;
+    let updated = false;
+    for (const item of postProcessorConfig.single) {
+      if (item.SpecialToken && tokenizer.languageRegex.test(item.SpecialToken.id)) {
+        item.SpecialToken.id = tokenizer.lang_to_token(job.source);
+        updated = true;
+        break;
+      }
+    }
+    return updated;
+  };
+  for (let i = 0; i < chunks.length; i++) {
+    progress({ stage: 'running', model: spec.label, detail: `Part ${i + 1} of ${chunks.length}` });
+    if (!setSourceLanguage()) throw new Error('Could not set the translation source language.');
+    const generation = {
+      src_lang: job.source,
+      tgt_lang: job.target,
+      max_new_tokens: 192,
+      num_beams: 4,
+      do_sample: false
+    };
+    const inputs = tokenizer._build_translation_inputs(chunks[i], {
+      padding: true,
+      truncation: true
+    }, generation);
+    const output = await model.generate({ ...inputs, ...generation });
+    const text = tokenizer.batch_decode(output, { skip_special_tokens: true })[0] || '';
+    translated.push(tasks.cleanOutput(text));
+  }
+  return {
+    kind: 'translation',
+    source: job.source,
+    target: job.target,
+    text: translated.filter(Boolean).join('\n\n'),
+    truncated: !!job.truncated,
+    ms: Date.now() - job.startedAt
+  };
+}
+
 async function runSummary(job) {
   const body = tasks.summariseInput(job.text);
   if (tasks.summaryTooLong(body)) throw new Error('There is not enough text on this page to summarise.');
@@ -179,7 +251,11 @@ if (msg.type !== 'job' && !msg.kind) return;
   const job = { ...msg, startedAt: Date.now() };
   currentJobId = job.id;
   try {
-    const result = job.kind === 'summary' ? await runSummary(job) : await runVision(job);
+    const result = job.kind === 'summary'
+      ? await runSummary(job)
+      : job.kind === 'translation'
+        ? await runTranslation(job)
+        : await runVision(job);
     parentPort.postMessage({ type: 'result', id: job.id, result });
   } catch (err) {
     parentPort.postMessage({
@@ -195,6 +271,7 @@ if (msg.type !== 'job' && !msg.kind) return;
 process.on('beforeExit', () => {
   vision = { model: null, processor: null };
   text = { model: null, tokenizer: null };
+  translation = { model: null, tokenizer: null };
 });
 
 // Keep the worker's module id stable for diagnostics.

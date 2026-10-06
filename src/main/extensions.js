@@ -5,13 +5,14 @@
 //  - Install from the Chrome Web Store (CRX3 endpoint) by URL or ID
 //  - Install from Edge Add-ons (CRX endpoint) by URL or ID
 // CRX2 and CRX3 containers are parsed by hand (skip header, unzip payload).
-// Note: Electron supports a large MV2/MV3 subset; toolbar popups are the
-// main gap. The extensions page in the app states this plainly.
+// Note: Electron supports a large MV2/MV3 subset. Action popup pages can be
+// opened in a constrained Prism-owned window; extensions still have Electron's
+// documented API limitations and are not fully equivalent to Chrome.
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const net = require('electron').net;
-const { app, dialog, BrowserWindow } = require('electron');
+const { app, dialog, BrowserWindow, screen } = require('electron');
 const { extract } = require('./unzip');
 const settings = require('./settings');
 
@@ -113,6 +114,7 @@ function manifestIcons(manifest, base) {
 class Extensions {
   constructor() {
     this.session = null;
+    this.popups = new Map();
   }
 
   init(session) {
@@ -122,7 +124,7 @@ class Extensions {
     const registry = settings.all().extensions.registry || [];
     for (const entry of registry) {
       try {
-        if (fs.existsSync(entry.path)) this.session.loadExtension(entry.path, { allowFileAccess: true });
+        if (fs.existsSync(entry.path)) this.session.extensions.loadExtension(entry.path, { allowFileAccess: true });
         else this._unregister(entry.id);
       } catch (e) {
         console.error('[extensions] failed to load', entry.name, e.message);
@@ -143,16 +145,21 @@ class Extensions {
     if (!this.session) return [];
     const loaded = new Map();
     try {
-      for (const ext of this.session.getAllExtensions()) loaded.set(ext.id, ext);
+      for (const ext of this.session.extensions.getAllExtensions()) loaded.set(ext.id, ext);
     } catch (_) {}
     const registry = settings.all().extensions.registry || [];
     const out = [];
     for (const entry of registry) {
       const live = loaded.get(entry.id);
+      const manifest = live && live.manifest;
+      const action = manifest && (manifest.action || manifest.browser_action || manifest.page_action);
+      const popup = action && typeof action.default_popup === 'string' && action.default_popup
+        ? action.default_popup : null;
+      const active = !!live;
       out.push({
         id: entry.id, name: entry.name, version: entry.version,
         source: entry.source, path: entry.path, icon: entry.icon || null,
-        installedAt: entry.installedAt, active: !!live
+        popup, installedAt: entry.installedAt, active
       });
     }
     return out;
@@ -173,7 +180,7 @@ class Extensions {
 
   async loadUnpacked(dir) {
     if (!this.session) throw new Error('Session not ready');
-    const ext = await this.session.loadExtension(dir, { allowFileAccess: true });
+    const ext = await this.session.extensions.loadExtension(dir, { allowFileAccess: true });
     this._register({
       id: ext.id, name: ext.name, version: ext.version,
       source: 'unpacked', path: dir,
@@ -182,6 +189,79 @@ class Extensions {
     });
     this._emit();
     return ext.id;
+  }
+
+  async openPopup(wid, id, tabs, anchor) {
+    if (!this.session) throw new Error('Extensions are not ready.');
+    const ext = this.session.extensions.getExtension(String(id || ''));
+    if (!ext) throw new Error('That extension is not currently loaded.');
+    const manifest = ext.manifest || {};
+    const action = manifest.action || manifest.browser_action || manifest.page_action;
+    const popup = action && typeof action.default_popup === 'string' ? action.default_popup : '';
+    if (!popup) return { error: 'This extension does not provide an action popup.' };
+    const extensionOrigin = new URL(ext.url).origin;
+    const popupUrl = new URL(popup, ext.url).toString();
+    if (new URL(popupUrl).origin !== extensionOrigin) throw new Error('Extension popup URL is invalid.');
+    const prior = this.popups.get(id);
+    if (prior && !prior.isDestroyed()) { prior.focus(); return { ok: true, existing: true }; }
+    const rec = tabs.windowRecord(wid);
+    if (!rec || rec.win.isDestroyed()) throw new Error('Browser window is no longer available.');
+    const bounds = rec.win.getBounds();
+    const display = screen.getDisplayMatching(bounds);
+    const work = display.workArea;
+    const popupWidth = Math.max(260, Math.min(360, work.width));
+    const popupHeight = Math.max(180, Math.min(520, work.height));
+    const desiredX = bounds.x + Math.round((anchor && anchor.right) || (bounds.width - 12)) - popupWidth;
+    const desiredY = bounds.y + Math.round((anchor && anchor.bottom) || (rec.chromeHeight + 4));
+    const x = Math.max(work.x, Math.min(desiredX, work.x + work.width - popupWidth));
+    const y = Math.max(work.y, Math.min(desiredY, work.y + work.height - popupHeight));
+    const win = new BrowserWindow({
+      width: popupWidth,
+      height: popupHeight,
+      minWidth: Math.min(260, popupWidth),
+      minHeight: Math.min(180, popupHeight),
+      maxWidth: Math.min(600, work.width),
+      maxHeight: Math.min(760, work.height),
+      x,
+      y,
+      parent: rec.win,
+      modal: false,
+      show: false,
+      frame: false,
+      resizable: true,
+      backgroundColor: '#202124',
+      webPreferences: {
+        session: this.session,
+        contextIsolation: true,
+        sandbox: true,
+        nodeIntegration: false,
+        webviewTag: false
+      }
+    });
+    this.popups.set(id, win);
+    win.once('ready-to-show', () => { if (!win.isDestroyed()) win.show(); });
+    win.webContents.on('before-input-event', (event, input) => {
+      if (input.key === 'Escape') {
+        event.preventDefault();
+        if (!win.isDestroyed()) win.close();
+      }
+    });
+    rec.win.once('closed', () => { if (!win.isDestroyed()) win.close(); });
+    win.on('closed', () => { if (this.popups.get(id) === win) this.popups.delete(id); });
+    win.webContents.setWindowOpenHandler(({ url }) => {
+      if (/^https?:/i.test(url)) tabs.createTab(wid, url);
+      return { action: 'deny' };
+    });
+    win.webContents.on('will-navigate', (event, url) => {
+      if (new URL(url).origin === extensionOrigin) return;
+      event.preventDefault();
+      if (/^https?:/i.test(url)) tabs.createTab(wid, url);
+    });
+    win.loadURL(popupUrl).catch((error) => {
+      if (!win.isDestroyed()) win.close();
+      throw error;
+    });
+    return { ok: true };
   }
 
   async pickAndLoadUnpacked(win) {
@@ -245,7 +325,10 @@ class Extensions {
   }
 
   async remove(id) {
-    try { this.session.removeExtension(id); } catch (_) {}
+    const popup = this.popups.get(id);
+    if (popup && !popup.isDestroyed()) popup.close();
+    this.popups.delete(id);
+    try { this.session.extensions.removeExtension(id); } catch (_) {}
     const entry = (settings.all().extensions.registry || []).find((e) => e.id === id);
     this._unregister(id);
     if (entry && entry.source !== 'unpacked' && entry.path && entry.path.startsWith(extDir())) {
@@ -257,8 +340,8 @@ class Extensions {
   async reload(id) {
     const entry = (settings.all().extensions.registry || []).find((e) => e.id === id);
     if (!entry) return;
-    try { this.session.removeExtension(id); } catch (_) {}
-    const ext = await this.session.loadExtension(entry.path, { allowFileAccess: true });
+    try { this.session.extensions.removeExtension(id); } catch (_) {}
+    const ext = await this.session.extensions.loadExtension(entry.path, { allowFileAccess: true });
     entry.version = ext.version;
     this._register(entry);
     this._emit();

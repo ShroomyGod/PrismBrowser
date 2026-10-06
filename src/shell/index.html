@@ -101,6 +101,7 @@
         <label class="switch"><input type="checkbox" id="shield-global"><span class="slider"></span></label>
       </div>
       <div class="pop-note" id="shield-note"></div>
+      <button class="pop-link" id="security-check-local">Check this address against local threat lists</button>
       <div class="pop-row" id="shield-site-row" style="display:none">
         <span id="shield-site-label"></span>
         <label class="switch"><input type="checkbox" id="shield-site"><span class="slider"></span></label>
@@ -127,9 +128,8 @@
          mid-interaction; it is included in the reported shell extent. -->
     <div id="menu-sub" style="display:none"></div>
 
-    <!-- Extensions dropdown (the toolbar "puzzle piece"). Lists installed extensions
-     and opens each one's management page; options page popups are a known
-     Electron gap, so a popup-only extension may not render here. -->
+    <!-- Extensions dropdown (the toolbar "puzzle piece"). Supported extension
+     action popups open in a constrained Prism-owned window. -->
     <div id="ext-pop" style="display:none">
       <div class="pop-row" style="padding-bottom:6px">
         <span class="pop-title">Extensions</span>
@@ -140,6 +140,20 @@
       <button class="pop-link" id="ext-store-edge">Browse Edge Add-ons</button>
       <button class="pop-link" id="ext-manage">Manage extensions</button>
     </div>
+
+    <!-- Local translation result -->
+    <section id="translation-pop" style="display:none" aria-label="Local translation">
+      <div class="translation-head">
+        <div><div class="pop-title" id="translation-title">Page translation</div><div class="translation-note">On-device AI · 100 languages · works offline</div></div>
+        <div class="translation-actions"><button id="translation-copy" class="ibtn ibtn-small" title="Copy translation">⧉</button><button id="translation-close" class="ibtn ibtn-small" title="Close translation">×</button></div>
+      </div>
+      <div class="translation-controls">
+        <label for="translation-source">From</label><select id="translation-source" aria-label="Translate from"></select>
+        <label for="translation-target">To</label><select id="translation-target" aria-label="Translate to"></select>
+        <button id="translation-run" class="pop-link">Translate</button>
+      </div>
+      <div id="translation-content" tabindex="0"></div>
+    </section>
 
     <!-- Find bar -->
     <div id="findbar" style="display:none">
