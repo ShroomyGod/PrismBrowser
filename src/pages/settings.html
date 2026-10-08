@@ -36,8 +36,8 @@
          the whole catalog on one scrollable page. Paging through 2,880 pages
          of generated swatches is gone along with the generator. -->
     <div class="setting-line">
-      <div class="info"><b>Theme</b><div class="muted">Applies to the browser chrome and internal pages. Signature themes pair curated palettes with original artwork.</div></div>
-      <div class="row"><span id="theme-count" class="badge" style="position:static">167 themes</span><button id="random-theme" type="button">Surprise me</button></div>
+      <div class="info"><b>Theme</b><div class="muted">Animated gallery themes with custom glowing cursors. Every look pairs a rich gradient frame with motion — only the Default basics sit still.</div></div>
+      <div class="row"><span id="theme-count" class="badge" style="position:static">35 themes</span><button id="random-theme" type="button">Surprise me</button></div>
     </div>
     <div class="theme-gallery">
       <nav id="theme-categories" class="theme-categories" aria-label="Theme categories"></nav>
@@ -50,8 +50,13 @@
       <div class="preview-content"><span class="preview-eyebrow">YOUR BROWSER, YOUR STYLE</span><b>Make Prism feel like yours.</b><span>Pick a visual style, then tune the details.</span><div class="preview-swatch"><i></i><i></i><i></i></div></div>
     </div>
     <div class="setting-line">
-      <div class="info"><label for="pixel-cursor"><b>Pixel-art cursor</b></label><div class="muted">Use a crisp, theme-tinted pixel pointer throughout browser pages.</div></div>
+      <div class="info"><label for="pixel-cursor"><b>Pixel-art cursor</b></label><div class="muted">Use a crisp, theme-tinted pointer, link hand, and text caret throughout the browser.</div></div>
       <label class="switch"><input id="pixel-cursor" type="checkbox"><span class="slider"></span></label>
+    </div>
+    <div class="setting-line">
+      <div class="info"><label for="cursor-size"><b>Pixel cursor size</b></label><div class="muted">Choose a smaller cursor if the pixel pointer feels oversized.</div></div>
+      <input id="cursor-size" type="range" min="16" max="28" step="2" style="max-width:220px" aria-describedby="cursor-size-value">
+      <output id="cursor-size-value" for="cursor-size">20px</output>
     </div>
     <div class="setting-line">
       <div class="info"><label for="ui-density"><b>Interface density</b></label><div class="muted">Set spacing across the tab strip, toolbar, and browser controls.</div></div>
@@ -239,6 +244,9 @@
     (['fluent', 'spring', 'arcade', 'minimal', 'off'].includes(value) ? value : 'fluent');
   function syncCustomizationControls() {
     $('pixel-cursor').checked = s.appearance.pixelCursor !== false;
+    const cursorSize = Math.max(16, Math.min(28, Number(s.appearance.cursorSize) || 20));
+    $('cursor-size').value = cursorSize;
+    $('cursor-size-value').value = cursorSize + 'px';
     $('ui-density').value = s.appearance.uiDensity || 'comfortable';
     $('tab-style').value = s.appearance.tabStyle || 'rounded';
     $('ui-font').value = s.appearance.uiFont || 'system';
@@ -262,11 +270,12 @@
     $('appearance-preview').dataset.tabStyle = s.appearance.tabStyle || 'rounded';
     $('appearance-preview').dataset.animationTheme = normalizeAnimation(s.appearance.animationTheme);
     $('appearance-preview').style.setProperty('--preview-font', document.documentElement.style.getPropertyValue('--ui-font'));
-    $('appearance-preview').style.setProperty('--preview-cursor', PrismPixelCursor.pointer(resolved.vars['--accent']));
-    $('appearance-preview').style.setProperty('--preview-cursor-image', PrismPixelCursor.icon(resolved.vars['--accent'], 'pointer'));
+    $('appearance-preview').style.setProperty('--preview-cursor', PrismPixelCursor.pointer(resolved.vars['--accent'], s.appearance.cursorSize, resolved.cursor));
+    $('appearance-preview').style.setProperty('--preview-cursor-image', PrismPixelCursor.icon(resolved.vars['--accent'], 'pointer', s.appearance.cursorSize, resolved.cursor));
     $('appearance-preview').dataset.pixelCursor = s.appearance.pixelCursor === false ? 'false' : 'true';
     $('appearance-preview').style.setProperty('--preview-chrome', resolved.vars['--chrome-bg'] === 'none' ? resolved.frame : resolved.vars['--chrome-bg']);
     $('appearance-preview').style.setProperty('--preview-chrome-size', resolved.vars['--chrome-background-size']);
+    $('appearance-preview').style.setProperty('--preview-chrome-position', resolved.vars['--chrome-background-position']);
     $('appearance-preview').style.setProperty('--preview-artwork', resolved.vars['--page-artwork']);
     $('appearance-preview').style.setProperty('--preview-chrome-color', resolved.frame);
     $('appearance-preview').style.setProperty('--preview-active', resolved.vars['--chrome-active']);
@@ -364,9 +373,10 @@
     thumb.dataset.artwork = String(Boolean(resolved.artwork));
     thumb.setAttribute('aria-hidden', 'true');
     thumb.style.setProperty('--thumb-color', vars['--chrome-color']);
-    thumb.style.setProperty('--thumb-cursor', PrismPixelCursor.icon(vars['--accent'], 'pointer'));
+    thumb.style.setProperty('--thumb-cursor', PrismPixelCursor.icon(vars['--accent'], 'pointer', s.appearance.cursorSize, resolved.cursor));
     thumb.style.setProperty('--thumb-image', vars['--chrome-bg']);
     thumb.style.setProperty('--thumb-background-size', vars['--chrome-background-size']);
+    thumb.style.setProperty('--thumb-background-position', vars['--chrome-background-position']);
     thumb.style.setProperty('--thumb-artwork', vars['--page-artwork']);
     thumb.style.setProperty('--thumb-active', vars['--chrome-active']);
     thumb.style.setProperty('--thumb-ink', vars['--chrome-ink']);
@@ -442,7 +452,7 @@
       section.append(heading, list);
       grid.appendChild(section);
     }
-    $('theme-count').textContent = PrismTheme.PRESETS.length + ' themes · ' + PrismTheme.PRESETS.filter((item) => item.artwork).length + ' illustrated';
+    $('theme-count').textContent = PrismTheme.PRESETS.length + ' themes · ' + PrismTheme.PRESETS.filter((item) => item.motion && item.motion !== 'none').length + ' animated';
     // Highlight the category the reader is actually looking at.
     if (window.IntersectionObserver) {
       const observer = new IntersectionObserver((entries) => {
@@ -459,7 +469,12 @@
   }
   $('siteTheme').value = s.appearance.siteTheme || 'auto';
   $('siteTheme').addEventListener('change', () => updateAppearance({ siteTheme: $('siteTheme').value }));
-  $('pixel-cursor').addEventListener('change', () => updateAppearance({ pixelCursor: $('pixel-cursor').checked }));
+  $('pixel-cursor').addEventListener('change', () => updateAppearance({ pixelCursor: $('pixel-cursor').checked }));  $('cursor-size').addEventListener('input', () => {
+    const cursorSize = Number($('cursor-size').value);
+    $('cursor-size-value').value = cursorSize + 'px';
+    updateAppearance({ cursorSize }, true);
+  });
+  $('cursor-size').addEventListener('change', flushAppearance);
   syncCustomizationControls();
   for (const [id, key] of [['ui-density', 'uiDensity'], ['tab-style', 'tabStyle'], ['ui-font', 'uiFont']]) {
     $(id).addEventListener('change', () => updateAppearance({ [key]: $(id).value }));
@@ -467,7 +482,8 @@
   $('tab-width').addEventListener('input', () => {
     $('tab-width-value').value = $('tab-width').value + 'px';
     updateAppearance({ tabWidth: Number($('tab-width').value) }, true);
-  });  $('tab-width').addEventListener('change', flushAppearance);
+  });
+  $('tab-width').addEventListener('change', flushAppearance);
   for (const [id, key] of [['custom-background', 'customBackground'], ['custom-accent', 'customAccent'], ['custom-frame', 'customFrame']]) {
     $(id).addEventListener('input', () => updateAppearance({ [key]: $(id).value }));
   }

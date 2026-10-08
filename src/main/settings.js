@@ -42,11 +42,12 @@ const DEFAULTS = {
     siteTheme: 'auto',        // 'auto' follows browser appearance only on sites that advertise scheme support; dark/light/off are optional hints
     // Id from PrismTheme.PRESETS. Replaces the old free hue/saturation/gradient
     // generator, which produced mismatched colour combinations.
-    themePreset: 'prism-dark',
+    themePreset: 'default-clean',
     customBackground: null,
     customAccent: null,
     customFrame: null,
     pixelCursor: true,
+    cursorSize: 20,
     uiDensity: 'comfortable',
     tabStyle: 'rounded',
     uiFont: 'system',
@@ -219,7 +220,7 @@ class Settings {
     const tabs = require('./tabs');
     const siteThemeChanged = patch && patch.appearance && 'siteTheme' in patch.appearance;
     const searchConfigChanged = patch && patch.search && ('searxngUrl' in patch.search || 'searxngFallbacks' in patch.search);
-    const cursorAppearanceKeys = ['pixelCursor', 'themePreset', 'customAccent', 'customBackground', 'customFrame'];
+    const cursorAppearanceKeys = ['pixelCursor', 'cursorSize', 'themePreset', 'customAccent', 'customBackground', 'customFrame'];
     const cursorAppearanceChanged = !!(patch && patch.appearance && cursorAppearanceKeys.some((key) => key in patch.appearance));
     if (searchConfigChanged) require('./prism-search-web')._reset();
     for (const win of BrowserWindow.getAllWindows()) {

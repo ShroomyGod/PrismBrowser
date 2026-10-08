@@ -228,7 +228,7 @@ async function runSummary(job) {
   progress({ stage: 'running', model: tasks.TEXT_MODELS.label });
   const prompt = tokenizer.apply_chat_template(messages, { tokenize: false, add_generation_prompt: true });
   const inputs = tokenizer(prompt);
-  const out = await model.generate({ ...inputs, max_new_tokens: 160, do_sample: false });
+  const out = await model.generate({ ...inputs, max_new_tokens: 96, repetition_penalty: 1.15, do_sample: false });
 
   // generate() hands back a Tensor of [prompt + completion], and it has no
   // "return_full_text" option to trim it with the way the text-generation

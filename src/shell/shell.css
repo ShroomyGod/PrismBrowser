@@ -122,19 +122,29 @@ html[data-pixel-cursor="true"] body * { cursor: var(--cursor-image, auto); }
 html[data-pixel-cursor="true"] a[href], html[data-pixel-cursor="true"] button,
 html[data-pixel-cursor="true"] [role="button"], html[data-pixel-cursor="true"] [role="link"],
 html[data-pixel-cursor="true"] input[type="button"], html[data-pixel-cursor="true"] input[type="submit"],
-html[data-pixel-cursor="true"] select, html[data-pixel-cursor="true"] label { cursor: var(--cursor-pointer-image, pointer); }
+html[data-pixel-cursor="true"] select, html[data-pixel-cursor="true"] label,
+html[data-pixel-cursor="true"] .tab, html[data-pixel-cursor="true"] #bookmarksbar .bm { cursor: var(--cursor-pointer-image, pointer); }
 html[data-pixel-cursor="true"] input:not([type]), html[data-pixel-cursor="true"] input[type="text"],
 html[data-pixel-cursor="true"] input[type="search"], html[data-pixel-cursor="true"] input[type="url"],
 html[data-pixel-cursor="true"] input[type="email"], html[data-pixel-cursor="true"] input[type="password"],
 html[data-pixel-cursor="true"] input[type="number"], html[data-pixel-cursor="true"] textarea,
-html[data-pixel-cursor="true"] [contenteditable="true"], html[data-pixel-cursor="true"] [role="textbox"] { cursor: text; }
+html[data-pixel-cursor="true"] [contenteditable="true"], html[data-pixel-cursor="true"] [role="textbox"] { cursor: var(--cursor-text-image, text); }
 html[data-pixel-cursor="true"] input:disabled, html[data-pixel-cursor="true"] button:disabled,
 html[data-pixel-cursor="true"] [aria-disabled="true"] { cursor: not-allowed; }
+html[data-pixel-cursor="true"] [aria-busy="true"], html[data-pixel-cursor="true"] .loading,
+html[data-pixel-cursor="true"] #load-progress { cursor: var(--cursor-wait-image, wait); }
+html[data-pixel-cursor="true"] [draggable="true"], html[data-pixel-cursor="true"] .tab { cursor: var(--cursor-pointer-image, pointer); }
+html[data-pixel-cursor="true"] .tab:active { cursor: var(--cursor-move-image, move); }
 html[data-pixel-cursor="false"] body, html[data-pixel-cursor="false"] body * { cursor: auto; }
 html[data-pixel-cursor="false"] a[href], html[data-pixel-cursor="false"] button,
 html[data-pixel-cursor="false"] [role="button"], html[data-pixel-cursor="false"] [role="link"],
 html[data-pixel-cursor="false"] input[type="button"], html[data-pixel-cursor="false"] input[type="submit"],
 html[data-pixel-cursor="false"] select, html[data-pixel-cursor="false"] label { cursor: pointer; }
+html[data-pixel-cursor="false"] input:not([type]), html[data-pixel-cursor="false"] input[type="text"],
+html[data-pixel-cursor="false"] input[type="search"], html[data-pixel-cursor="false"] input[type="url"],
+html[data-pixel-cursor="false"] input[type="email"], html[data-pixel-cursor="false"] input[type="password"],
+html[data-pixel-cursor="false"] input[type="number"], html[data-pixel-cursor="false"] textarea,
+html[data-pixel-cursor="false"] [contenteditable="true"], html[data-pixel-cursor="false"] [role="textbox"] { cursor: text; }
 button { background: none; border: none; color: inherit; font: inherit; cursor: var(--cursor-pointer, pointer); }
 button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
 html[data-focus-visible="subtle"] :focus-visible { outline-width: 2px; outline-offset: 1px; }
@@ -159,7 +169,7 @@ html[data-motion="wave"] #chrome-top::after {
 @keyframes prism-gradient-shimmer { to { background-position: -200% 0; } }
 
 /* ---------- top chrome: everything the page must sit below ---------- */
-#chrome-top { flex: none; position: relative; z-index: 30; background-color: var(--chrome-color, var(--bg2)); background-image: var(--chrome-bg, var(--chrome-gradient, none)); background-size: var(--chrome-background-size, 220% 220%); background-position: center top; color: var(--chrome-ink, var(--text)); }
+#chrome-top { flex: none; position: relative; z-index: 30; background-color: var(--chrome-color, var(--bg2)); background-image: var(--chrome-bg, var(--chrome-gradient, none)); background-size: var(--chrome-background-size, 220% 220%); background-position: var(--chrome-background-position, center top); color: var(--chrome-ink, var(--text)); }
 html[data-theme-artwork="true"] #chrome-top { background-size: 100% 100%, cover; }
 html[data-theme-artwork="true"] #tabstrip,
 html[data-theme-artwork="true"] #toolbar { background-image: none; background-color: transparent; }
@@ -194,7 +204,7 @@ html[data-motion="wave"] #chrome-top { background-size: 250% 100%; animation: pr
 #tabstrip {
   height: var(--tabstrip-height, 40px); display: flex; align-items: flex-end; gap: 2px;
   padding: 0 0 0 8px; background-color: transparent; background-image: var(--chrome-bg, var(--chrome-gradient, none));
-  background-size: var(--chrome-background-size, 220% 220%); background-position: center top;
+  background-size: var(--chrome-background-size, 220% 220%); background-position: var(--chrome-background-position, center top);
   -webkit-app-region: drag; flex: none;
 }
 #tabs { display: flex; align-items: flex-end; height: 100%; max-width: calc(100% - 140px); overflow: hidden; }
@@ -215,10 +225,14 @@ html[data-motion="wave"] #chrome-top { background-size: 250% 100%; animation: pr
   width: var(--tab-w); min-width: 48px; max-width: var(--tab-w);
   height: calc(var(--tabstrip-height, 40px) - 6px); display: flex; align-items: center; gap: 6px;
   flex: 0 1 var(--tab-w);
-  padding: 0 6px 0 9px; border-radius: var(--tab-radius, 8px) var(--tab-radius, 8px) 0 0; cursor: default;
+  padding: 0 6px 0 9px; border-radius: var(--tab-radius, 8px) var(--tab-radius, 8px) 0 0;
+  cursor: var(--cursor-pointer, pointer);
   color: var(--text-dim); position: relative;
 }
-.tab.active { background-color: var(--chrome-active, var(--bg3)); background-image: linear-gradient(135deg, var(--gradient-a, transparent), var(--gradient-b, transparent)); color: var(--chrome-ink, var(--text)); }
+.tab.active { background-color: var(--chrome-active, var(--bg3)); background-image: linear-gradient(135deg, var(--gradient-a, transparent), var(--gradient-b, transparent)); color: var(--chrome-ink, var(--text)); box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 0 14px var(--chrome-glow, transparent); }
+html[data-motion="shimmer"] .tab.active, html[data-motion="pulse"] .tab.active,
+html[data-motion="wave"] .tab.active { animation: prism-tab-glow var(--motion-duration, 7s) ease-in-out infinite; }
+@keyframes prism-tab-glow { 50% { box-shadow: inset 0 1px 0 rgba(255,255,255,.2), 0 0 22px var(--chrome-glow, transparent); } }
 html[data-tab-style="pill"] .tab { height: calc(var(--tabstrip-height, 40px) - 10px); margin: 0 2px 5px; border-radius: 999px; }
 html[data-tab-style="pill"] .tab.active { background-image: none; }
 html[data-tab-style="underline"] .tab { border-radius: 0; }
@@ -260,7 +274,7 @@ html[data-ui-density="compact"] #omnibox { height: 29px; }
 #toolbar {
   height: var(--toolbar-height, 44px); flex: none; display: flex; align-items: center; gap: 3px;
   padding: 0 8px; background-color: transparent; background-image: var(--chrome-bg, var(--chrome-gradient, none));
-  background-size: var(--chrome-background-size, 220% 220%); background-position: center top; box-shadow: 0 1px 0 var(--chrome-line, var(--line)); color: var(--chrome-ink, var(--text));
+  background-size: var(--chrome-background-size, 220% 220%); background-position: var(--chrome-background-position, center top); box-shadow: 0 1px 0 var(--chrome-line, var(--line)); color: var(--chrome-ink, var(--text));
 }
 .ibtn {
   width: 30px; height: 30px; border-radius: 7px; display: flex;
@@ -276,7 +290,7 @@ html[data-ui-density="compact"] #omnibox { height: 29px; }
   background: var(--bg3); border: 1px solid var(--line); border-radius: 16px;
   padding: 0 8px 0 14px; min-width: 120px; position: relative;
 }
-#omnibox:focus-within { border-color: var(--accent); background: var(--bg); }
+#omnibox:focus-within { border-color: var(--accent); background: var(--bg); box-shadow: 0 0 0 1px var(--chrome-accent, var(--accent)), 0 0 18px var(--chrome-glow, transparent); }
 #sec-icon { color: var(--ok); display: flex; }
 #sec-icon.insecure { color: var(--danger); }
 #sec-icon.prism, #sec-icon.file, #sec-icon.none { color: var(--text-dim); }
@@ -483,7 +497,7 @@ html[data-reduce-motion="reduce"] .tab.tab-leaving { animation: none; }
 .theme-preset-chip {
   display: block; height: 30px; border-radius: 5px; border: 1px solid var(--line);
   background-color: var(--chip-color); background-image: var(--chip-image, none);
-  background-size: cover; background-position: center top;
+  background-size: var(--chip-size, cover); background-position: var(--chip-position, center top);
   box-shadow: inset 0 -8px 12px -10px var(--chip-page);
 }
 .theme-preset-name { font-size: 10.5px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -520,9 +534,15 @@ html[data-reduce-motion="reduce"] .tab.tab-leaving { animation: none; }
  * covering the top of the page content. */
 #bookmarksbar {
   height: 28px; flex: none; display: flex; align-items: center; gap: 2px;
-  padding: 0 10px; background: var(--bg2); border-top: 1px solid var(--line-soft);
+  padding: 0 10px; background: var(--chrome-color, var(--bg2));
+  background-image: var(--chrome-bg, var(--chrome-gradient, none));
+  background-size: var(--chrome-background-size, 220% 220%); background-position: var(--chrome-background-position, center top);
+  border-top: 1px solid var(--chrome-line, var(--line-soft)); color: var(--chrome-ink, var(--text));
   overflow-x: auto; scrollbar-width: none;
 }
+html[data-theme-artwork="true"] #bookmarksbar { background-color: transparent; background-image: none; }
+#bookmarksbar .bm { color: var(--chrome-ink, var(--text)); }
+#bookmarksbar .bm:hover { background: color-mix(in srgb, var(--chrome-ink, var(--text)) 12%, transparent); }
 #bookmarksbar::-webkit-scrollbar { display: none; }
 .bm {
   display: flex; align-items: center; gap: 6px; padding: 4px 9px; border-radius: 6px;

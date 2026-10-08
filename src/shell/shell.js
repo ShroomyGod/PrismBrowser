@@ -1380,8 +1380,9 @@ function applyTheme() {
   if (window.PrismTheme) {
     window.PrismTheme.apply(document.documentElement, appearance);
   } else document.documentElement.dataset.theme = state.theme || 'dark';
-  const cursor = appearance.pixelCursor === false ? 'auto' : 'var(--cursor-image, auto)';
+  const cursor = appearance.pixelCursor === false ? 'pointer' : 'var(--cursor-pointer-image, var(--cursor-image, auto))';
   document.documentElement.style.setProperty('--cursor-pointer', cursor);
+  document.documentElement.style.setProperty('--cursor-text', appearance.pixelCursor === false ? 'text' : 'var(--cursor-text-image, text)');
   // Keep the shell's own mirror in step; internal pages do the same from the
   // preset, and the site-theme path in the main process reads it.
   if (window.PrismTheme) state.theme = document.documentElement.dataset.theme;
@@ -1396,7 +1397,7 @@ function applyTheme() {
 // The popup shows a scrollable list of curated presets grouped by category
 // rather than the old hue/gradient/motion inputs: every row is a complete,
 // designed palette rather than a generated combination.
-const SHELL_CATEGORY_LIMIT = 4;
+const SHELL_CATEGORY_LIMIT = 6;
 function shellPresetCategories() {
   if (!window.PrismTheme) return [];
   return window.PrismTheme.CATEGORIES.map((category) => ({ category, items: window.PrismTheme.presetsIn(category.id) }));
@@ -1430,6 +1431,8 @@ function renderThemePresets() {
       chip.setAttribute('aria-hidden', 'true');
       chip.style.setProperty('--chip-color', resolved.vars['--chrome-color']);
       chip.style.setProperty('--chip-image', resolved.vars['--chrome-bg']);
+      chip.style.setProperty('--chip-size', resolved.vars['--chrome-background-size']);
+      chip.style.setProperty('--chip-position', resolved.vars['--chrome-background-position']);
       chip.style.setProperty('--chip-page', resolved.vars['--bg']);
       button.appendChild(chip);
       const label = document.createElement('span');

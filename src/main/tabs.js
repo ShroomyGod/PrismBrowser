@@ -391,7 +391,7 @@ class TabsManager {
     const appearance = settings.all().appearance || {};
     const resolved = PrismTheme.resolve(appearance);
     const color = resolved.vars['--accent'];
-    const cursorCss = appearance.pixelCursor === false ? '' : PrismPixelCursor.stylesheet(color);
+    const cursorCss = appearance.pixelCursor === false ? '' : PrismPixelCursor.stylesheet(color, appearance.cursorSize, resolved.cursor);
     if (tab.themeCursorKey) {
       const previousKey = tab.themeCursorKey;
       tab.themeCursorKey = '';
