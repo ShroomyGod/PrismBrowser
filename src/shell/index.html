@@ -5,6 +5,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self' prism:; img-src prism: https: http: data:; style-src 'self' 'unsafe-inline'">
 <link rel="stylesheet" href="./shell.css">
 <script src="prism://settings/shared/theme-engine.js"></script>
+<script src="prism://settings/shared/pixel-cursor.js"></script>
 <title>Prism Browser</title>
 </head>
 <body>
@@ -174,6 +175,25 @@
     <!-- status bubble + toasts -->
     <div id="status-bubble" style="display:none"></div>
     <div id="toasts"></div>
+
+    <section id="prism-vision-overlay" aria-label="Prism Vision" hidden>
+      <header class="vision-overlay-head">
+        <div class="vision-overlay-brand"><span class="vision-overlay-mark">✦</span><div><strong>Prism Vision</strong><small id="vision-overlay-source">Select anything on this page</small></div></div>
+        <div class="vision-overlay-tools"><span class="vision-local-tag">On-device AI · private</span><button id="vision-overlay-close" class="ibtn" title="Close Prism Vision (Esc)" aria-label="Close Prism Vision">×</button></div>
+      </header>
+      <div id="vision-overlay-stage" aria-label="Page screenshot; drag to select an area">
+        <img id="vision-overlay-image" alt="Screenshot of the current webpage" draggable="false">
+        <div id="vision-overlay-selection" hidden></div>
+        <div class="vision-overlay-hint">Drag across the page to select an area</div>
+      </div>
+      <aside class="vision-overlay-panel">
+        <div class="vision-panel-title"><span>✧</span><div><strong>AI Overview</strong><small id="vision-overlay-status">Ready when you are</small></div></div>
+        <div id="vision-overlay-summary" aria-live="polite">Drag over text, an image, or anything you want Prism to explain.</div>
+        <div class="vision-panel-divider"></div>
+        <div class="vision-panel-actions"><button id="vision-overlay-describe" class="vision-primary-action" disabled>✦ &nbsp; Describe selection</button><button id="vision-overlay-read" class="vision-secondary-action" disabled>Read text</button></div>
+        <div class="vision-panel-foot">Your screenshot stays on this device. No visual-search upload.</div>
+      </aside>
+    </section>
 
     <div id="load-progress" style="display:none"></div>
   </div>

@@ -20,6 +20,8 @@ const security = require('./security');
 const crawler = require('./crawler');
 const securestore = require('./securestore');
 const storeInstall = require('./store-install');
+const PrismTheme = require('../pages/theme-engine');
+const PrismPixelCursor = require('../pages/pixel-cursor');
 
 const DEFAULT_CHROME_HEIGHT = 84; // fallback until the shell reports its real height
 const PAGE_PRELOAD = path.join(__dirname, '..', 'preload', 'page.js');
@@ -64,8 +66,10 @@ class TabsManager {
   }
 
   _tabByWebContentsId(wcId) {
+    const id = typeof wcId === 'number' ? wcId : wcId && wcId.id;
+    if (!id) return null;
     for (const tab of this.tabs.values()) {
-      if (tab.view && !tab.view.webContents.isDestroyed() && tab.view.webContents.id === wcId) return tab;
+      if (tab.view && !tab.view.webContents.isDestroyed() && tab.view.webContents.id === id) return tab;
     }
     return null;
   }
@@ -117,7 +121,8 @@ class TabsManager {
       htmlFullscreen: false,
       chromeHeight: DEFAULT_CHROME_HEIGHT, // updated by setChromeHeight()
       shellView: null,   // topmost WebContentsView holding the browser chrome
-      shellExtent: 0     // bottom edge the shell needs (chrome + open overlays)
+      shellExtent: 0,    // bottom edge the shell needs (chrome + open overlays)
+      visionOverlay: false
     };
     this.windows.set(wid, record);
 
@@ -237,7 +242,11 @@ class TabsManager {
 
     // Clicking the page closes shell overlays (dropdown/menus) that were
     // floating above it — same as clicking away in any browser.
-    wc.on('focus', () => { this._sendToShell(tab.winId, 'prism:page-focused'); });
+    wc.on('focus', () => {
+      const rec = this.windows.get(tab.winId);
+      if (rec && rec.visionOverlay) this._sendToShell(tab.winId, 'prism:vision-overlay:page-focused');
+      this._sendToShell(tab.winId, 'prism:page-focused');
+    });
 
     // Chrome-style right-click menu. showPageContextMenu() has existed in
     // menus.js all along, but nothing ever bound it to this event, so
@@ -258,7 +267,10 @@ class TabsManager {
       this._sendOmnibox(tab);
       this._maybeIngest(tab);
     });
-    wc.on('dom-ready', () => this._applyCompatibleSiteTheme(tab));
+    wc.on('dom-ready', () => {
+      this._applyCompatibleSiteTheme(tab);
+      this._applyThemeCursor(tab);
+    });
 
     // Store pages: swap the dead "Add to Chrome" button for a working
     // "Install To Prism", and silence the "Switch to Chrome?" dialog.
@@ -369,6 +381,34 @@ class TabsManager {
         total: result.matches
       });
     });
+  }
+
+  async _applyThemeCursor(tab) {
+    const wc = tab && tab.view && tab.view.webContents;
+    if (!wc || wc.isDestroyed()) return;
+    tab.themeCursorRevision = (tab.themeCursorRevision || 0) + 1;
+    const revision = tab.themeCursorRevision;
+    const appearance = settings.all().appearance || {};
+    const resolved = PrismTheme.resolve(appearance);
+    const color = resolved.vars['--accent'];
+    const cursorCss = appearance.pixelCursor === false ? '' : PrismPixelCursor.stylesheet(color);
+    if (tab.themeCursorKey) {
+      const previousKey = tab.themeCursorKey;
+      tab.themeCursorKey = '';
+      try { await wc.removeInsertedCSS(previousKey); } catch (_) { /* replaced navigation or closed contents */ }
+    }
+    if (revision !== tab.themeCursorRevision || wc.isDestroyed()) return;
+    if (cursorCss) {
+      try {
+        const key = await wc.insertCSS(cursorCss);
+        if (revision === tab.themeCursorRevision && !wc.isDestroyed()) tab.themeCursorKey = key;
+        else await wc.removeInsertedCSS(key);
+      } catch (error) { console.warn('[theme] could not apply page cursor', error.message); }
+    }
+  }
+
+  reapplyThemeCursorToAllTabs() {
+    for (const tab of this.tabs.values()) this._applyThemeCursor(tab);
   }
 
   _maybeIngest(tab) {
@@ -830,6 +870,14 @@ class TabsManager {
     this._layoutWindow(wid);
   }
 
+  setVisionOverlay(wid, open) {
+    const rec = this.windows.get(wid);
+    if (!rec || rec.win.isDestroyed()) return false;
+    rec.visionOverlay = !!open;
+    this._layoutWindow(wid);
+    return true;
+  }
+
   _layoutWindow(wid) {
     const rec = this.windows.get(wid);
     if (!rec || rec.win.isDestroyed()) return;
@@ -851,7 +899,7 @@ class TabsManager {
     // video owns the whole window.
     const sv = rec.shellView;
     if (sv && !sv.webContents.isDestroyed()) {
-      const sh = fs ? 0 : Math.min(h, Math.max(top, rec.shellExtent || 0));
+      const sh = fs ? 0 : (rec.visionOverlay ? h : Math.min(h, Math.max(top, rec.shellExtent || 0)));
       sv.setBounds({ x: 0, y: 0, width: w, height: sh });
     }
     // Bounds changes must not reorder views behind our back — keep the shell

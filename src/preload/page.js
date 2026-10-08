@@ -24,6 +24,8 @@ if (location.protocol === 'prism:') {
     setSettings: (patch) => ipcRenderer.invoke('prism:settings:set', patch),
     relaunch: () => ipcRenderer.invoke('prism:relaunch'),
     versions: () => ipcRenderer.invoke('prism:versions'),
+    defaultBrowserStatus: () => ipcRenderer.invoke('prism:default-browser:status'),
+    openDefaultBrowserSettings: () => ipcRenderer.invoke('prism:default-browser:open-settings'),
 
     // prism search
     search: (q, offset, limit) => ipcRenderer.invoke('prism:search:query', { q, offset, limit }),
@@ -64,6 +66,10 @@ if (location.protocol === 'prism:') {
     passwordsAdd: (origin, username, password) => ipcRenderer.invoke('prism:passwords:add', { origin, username, password }),
     passwordsRemove: (id) => ipcRenderer.invoke('prism:passwords:remove', { id }),
     passwordsReveal: (id) => ipcRenderer.invoke('prism:passwords:reveal', { id }),
+    passwordsExportCsv: () => ipcRenderer.invoke('prism:passwords:export-csv'),
+    passwordsImportCsv: () => ipcRenderer.invoke('prism:passwords:import-csv'),
+    cookiesExportCkz: (passphrase) => ipcRenderer.invoke('prism:cookies:export-ckz', { passphrase }),
+    cookiesImportCkz: (passphrase) => ipcRenderer.invoke('prism:cookies:import-ckz', { passphrase }),
 
     // extensions
     extensionsList: () => ipcRenderer.invoke('prism:extensions:list'),
@@ -80,10 +86,13 @@ if (location.protocol === 'prism:') {
     aiStatus: () => ipcRenderer.invoke('prism:ai:status'),
     aiTasks: () => ipcRenderer.invoke('prism:ai:tasks'),
     aiWatch: () => ipcRenderer.invoke('prism:ai:watch'),
-    aiCapture: () => ipcRenderer.invoke('prism:ai:capture'),
+    aiTakeCapture: () => ipcRenderer.invoke('prism:ai:vision-session'),
+    copyText: (text) => ipcRenderer.invoke('prism:clipboard:write', { text }),
+    aiCapture: (tabId) => ipcRenderer.invoke('prism:ai:capture', { tabId }),
+    aiCopyImage: (image) => ipcRenderer.invoke('prism:ai:copy-image', { image }),
     aiVision: (image, task, input) => ipcRenderer.invoke('prism:ai:vision', { image, task, input }),
-    aiSummarise: (style) => ipcRenderer.invoke('prism:ai:summarise', { style }),
     aiSummariseText: (text, style) => ipcRenderer.invoke('prism:ai:summarise-text', { text, style }),
+    aiTranslateText: (text, source, target) => ipcRenderer.invoke('prism:ai:translate-text', { text, source, target }),
     aiClearCache: () => ipcRenderer.invoke('prism:ai:clear-cache'),
     onAiProgress: (fn) => ipcRenderer.on('prism:ai:progress', (_e, d) => fn(d)),
 

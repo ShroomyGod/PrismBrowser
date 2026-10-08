@@ -21,19 +21,23 @@ const { index } = require('./index-store');
 const adblock = require('./adblock');
 const security = require('./security');
 const updater = require('./updater');
+const defaultBrowser = require('./default-browser');
 
 const SMOKE = process.argv.includes('--smoke');
+const startupDefaultUrl = defaultBrowser.urlFromArgs(process.argv);
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
-    const wid = tabs.focusedWindowId();
+  app.on('second-instance', (_event, argv) => {
+    const url = defaultBrowser.urlFromArgs(argv);
+    const wid = tabs.focusedWindowId() || [...tabs.windows.keys()][0];
     if (wid) {
+      if (url) tabs.createTab(wid, url);
       const rec = tabs.windowRecord(wid);
       if (rec) { if (rec.win.isMinimized()) rec.win.restore(); rec.win.focus(); }
     } else if (!SMOKE) {
-      tabs.createWindow();
+      tabs.createWindow({ urls: url ? [url] : undefined });
     }
   });
 
@@ -91,9 +95,20 @@ if (!app.requestSingleInstanceLock()) {
       try { securestore.flushAll(); } catch (e) { console.error('[prism] flush', e); }
     });
 
-    // First window (or restored session)
-    if (!tabs.restoreSession()) {
+    // Open startup links handed off by Windows, otherwise restore the saved session.
+    const restored = tabs.restoreSession();
+    if (startupDefaultUrl) {
+      const wid = restored ? (tabs.focusedWindowId() || [...tabs.windows.keys()][0]) : null;
+      if (wid) tabs.createTab(wid, startupDefaultUrl);
+      else tabs.createWindow({ urls: [startupDefaultUrl] });
+    } else if (!restored) {
       tabs.createWindow({ urls: ['prism://newtab'] });
+    }
+
+    if (!SMOKE) {
+      setTimeout(() => defaultBrowser.promptOnStartup({ settings, tabs }).catch((error) => {
+        console.warn('[default-browser] startup prompt unavailable', error.message);
+      }), 900);
     }
 
     if (SMOKE) {

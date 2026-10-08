@@ -1,7 +1,7 @@
 // shell-ipc.js — every ipcMain handler: shell controls, omnibox, internal
 // page APIs (history/bookmarks/downloads/passwords/settings/search),
 // extensions, privacy stats, and data clearing.
-const { ipcMain, app, shell, session, clipboard, dialog, BrowserWindow } = require('electron');
+const { ipcMain, app, shell, session, clipboard, nativeImage, dialog, BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const settings = require('./settings');
@@ -17,6 +17,7 @@ const { index } = require('./index-store');
 const menus = require('./menus');
 const downloads = require('./downloads');
 const ai = require('./ai');
+const dataTransfer = require('./data-transfer');
 
 function registerIpc(tabs) {
   // The shell lives in its own WebContentsView, so resolve the owning
@@ -192,6 +193,74 @@ function registerIpc(tabs) {
     stores.removePassword(id); return true;
   });
   ipcMain.handle('prism:passwords:reveal', (e, { id }) => (privSender(e) ? '' : stores.revealPassword(id)));
+  ipcMain.handle('prism:passwords:export-csv', async (e) => {
+    if (privSender(e)) return { error: 'Password import and export is unavailable in a private window.' };
+    try {
+      const result = await dialog.showSaveDialog(winOf(e), {
+        title: 'Export passwords as Google Password Manager CSV', defaultPath: 'Prism passwords.csv',
+        filters: [{ name: 'CSV password export', extensions: ['csv'] }]
+      });
+      if (result.canceled || !result.filePath) return { canceled: true };
+      const target = /\.csv$/i.test(result.filePath) ? result.filePath : result.filePath + '.csv';
+      fs.writeFileSync(target, dataTransfer.exportPasswordCsv(stores.exportPasswords()), { encoding: 'utf8', mode: 0o600, flag: 'w' });
+      return { ok: true, path: target, count: stores.exportPasswords().length };
+    } catch (error) { return { error: (error && error.message) || 'Could not export passwords.' }; }
+  });
+  ipcMain.handle('prism:passwords:import-csv', async (e) => {
+    if (privSender(e)) return { error: 'Password import and export is unavailable in a private window.' };
+    try {
+      const result = await dialog.showOpenDialog(winOf(e), {
+        title: 'Import Google Password Manager CSV', properties: ['openFile'],
+        filters: [{ name: 'CSV password export', extensions: ['csv'] }]
+      });
+      if (result.canceled || !result.filePaths.length) return { canceled: true };
+      const file = result.filePaths[0];
+      const stat = fs.statSync(file);
+      if (!stat.isFile() || stat.size > dataTransfer.CSV_LIMIT) return { error: 'CSV file is too large or invalid.' };
+      const parsed = dataTransfer.parsePasswordCsv(fs.readFileSync(file, 'utf8'));
+      const merged = stores.importPasswords(parsed.entries);
+      return { ok: true, ...merged, rejected: parsed.rejected, total: parsed.total };
+    } catch (error) { return { error: (error && error.message) || 'Could not import passwords.' }; }
+  });
+  ipcMain.handle('prism:cookies:export-ckz', async (e, { passphrase }) => {
+    if (privSender(e)) return { error: 'Cookie import and export is unavailable in a private window.' };
+    const record = tabs.windowRecord(activeWid(e));
+    if (!record || record.private) return { error: 'Open a regular browser window to export cookies.' };
+    try {
+      const result = await dialog.showSaveDialog(winOf(e), {
+        title: 'Export site cookies as encrypted CKZ', defaultPath: 'Prism cookies.ckz',
+        filters: [{ name: 'Prism encrypted cookies', extensions: ['ckz'] }]
+      });
+      if (result.canceled || !result.filePath) return { canceled: true };
+      const cookies = await tabs.sessions.mainSession.cookies.get({});
+      const archive = await dataTransfer.exportCookieArchive(cookies, passphrase);
+      const target = /\.ckz$/i.test(result.filePath) ? result.filePath : result.filePath + '.ckz';
+      fs.writeFileSync(target, archive, { mode: 0o600, flag: 'w' });
+      return { ok: true, path: target, count: cookies.length };
+    } catch (error) { return { error: (error && error.message) || 'Could not export cookies.' }; }
+  });
+  ipcMain.handle('prism:cookies:import-ckz', async (e, { passphrase }) => {
+    if (privSender(e)) return { error: 'Cookie import and export is unavailable in a private window.' };
+    const record = tabs.windowRecord(activeWid(e));
+    if (!record || record.private) return { error: 'Open a regular browser window to import cookies.' };
+    try {
+      const result = await dialog.showOpenDialog(winOf(e), {
+        title: 'Import encrypted Prism CKZ cookies', properties: ['openFile'],
+        filters: [{ name: 'Prism encrypted cookies', extensions: ['ckz'] }]
+      });
+      if (result.canceled || !result.filePaths.length) return { canceled: true };
+      const file = result.filePaths[0];
+      const stat = fs.statSync(file);
+      if (!stat.isFile() || stat.size > dataTransfer.CKZ_LIMIT) return { error: 'Cookie archive is too large or invalid.' };
+      const cookies = await dataTransfer.importCookieArchive(fs.readFileSync(file), passphrase);
+      let imported = 0, failed = 0;
+      for (const cookie of cookies) {
+        try { await tabs.sessions.mainSession.cookies.set(cookie); imported++; }
+        catch (_) { failed++; }
+      }
+      return { ok: true, imported, failed, total: cookies.length };
+    } catch (error) { return { error: (error && error.message) || 'Could not import cookie archive.' }; }
+  });
 
   // ---------- settings ----------
   ipcMain.handle('prism:settings:get', () => settings.all());
@@ -207,6 +276,12 @@ function registerIpc(tabs) {
     return next;
   });
   ipcMain.handle('prism:relaunch', () => { app.relaunch(); app.quit(); return true; });
+  ipcMain.handle('prism:default-browser:status', () => ({
+    supported: process.platform === 'win32',
+    isDefault: require('./default-browser').isDefaultBrowser()
+  }));
+  ipcMain.handle('prism:default-browser:open-settings', async () =>
+    require('./default-browser').openDefaultAppsSettings());
 
   // ---------- Prism Search ----------
   ipcMain.handle('prism:search:query', (_e, { q, offset, limit }) => prismSearch.search(q, { offset, limit }));
@@ -450,11 +525,52 @@ try {
   // Inference happens in a worker thread (src/ai/worker.js); these handlers
   // only capture input and hand it over, so no model work touches this process.
 
-  ipcMain.handle('prism:ai:status', () => ai.status());
+  const visionClaims = new Map();
+  const visionOverlays = new Map();
+
+  // Model settings are also shown on prism://settings; image/text inference
+  // remains restricted to an explicitly claimed Prism Vision tab.
+  function aiManagementAccess(e) {
+    const tab = tabs._tabByWebContentsId(e.sender);
+    let page;
+    try { page = new URL(e.sender.getURL()); } catch (_) { return false; }
+    if (!tab || page.protocol !== 'prism:') return false;
+    if (page.hostname === 'settings') return true;
+    const claim = page.hostname === 'vision' && visionClaims.get(tab.id);
+    return !!(claim && claim.expires >= Date.now());
+  }
+
+  ipcMain.handle('prism:ai:vision-session', (e) => {
+    const tab = tabs._tabByWebContentsId(e.sender);
+    let page;
+    try { page = new URL(e.sender.getURL()); } catch (_) { return { error: 'Prism Vision is not available in this page.' }; }
+    if (!tab || page.protocol !== 'prism:' || page.hostname !== 'vision') {
+      return { error: 'Prism Vision is not available in this page.' };
+    }
+    const capture = pendingVisionCaptures.get(tab.id) || null;
+    const previous = visionClaims.get(tab.id);
+    const sourceTabId = (capture && capture.sourceTabId) ||
+      (previous && previous.expires >= Date.now() && previous.sourceTabId) || null;
+    if (sourceTabId) {
+      const sourceTab = tabs.tabs.get(sourceTabId);
+      if (!sourceTab || sourceTab.winId !== tab.winId || !/^https?:/i.test(sourceTab.view.webContents.getURL())) {
+        return { error: 'The captured page is no longer available.' };
+      }
+    }
+    visionClaims.set(tab.id, { sourceTabId, expires: Date.now() + 30 * 60 * 1000 });
+    if (capture) pendingVisionCaptures.delete(tab.id);
+    return { ok: true, sourceTabId, capture };
+  });
+
+  ipcMain.handle('prism:ai:status', (e) => {
+    if (!aiManagementAccess(e)) return { error: 'Local AI model settings are not available in this page.' };
+    return ai.status();
+  });
 
   // Which tasks the Vision page offers is a user choice, so the filtering happens
   // here: the page must not be able to offer a task the user has switched off.
-  ipcMain.handle('prism:ai:tasks', () => {
+  ipcMain.handle('prism:ai:tasks', (e) => {
+    if (!aiManagementAccess(e)) return { error: 'Local AI tasks are not available in this page.' };
     const allowed = settings.get('ai.visionTasks');
     const list = Array.isArray(allowed) && allowed.length
       ? ai.tasks.VISION_TASKS.filter((t) => allowed.includes(t.id))
@@ -471,6 +587,7 @@ try {
   // asked, so the Vision page can show what is happening instead of hanging.
   ipcMain.handle('prism:ai:watch', (e) => {
     const sender = e.sender;
+    if (tabs.shellContentsForWindow(winOf(e)) !== sender) return false;
     const off = ai.onProgress((payload) => {
       if (!sender.isDestroyed()) sender.send('prism:ai:progress', payload);
     });
@@ -478,19 +595,178 @@ try {
     return true;
   });
 
-  // Screenshots the active tab so Prism Vision has an image to read. capturePage
-  // returns the visible viewport, which is what the user is looking at.
-  ipcMain.handle('prism:ai:capture', async (e) => {
-    const wc = tabs.activeWebContents(activeWid(e));
-    if (!wc) return { error: 'There is no active tab to look at.' };
+  function shellVisionSession(e, wid, tabId) {
+    const senderWid = activeWid(e);
+    if (!senderWid || (wid && senderWid !== wid)) return null;
+    const record = tabs.windowRecord(senderWid);
+    const sourceTab = tabId ? tabs.tabs.get(tabId) : tabs.activeTab(senderWid);
+    if (!record || !sourceTab || sourceTab.winId !== senderWid || sourceTab.id !== record.active ||
+        !/^https?:/i.test(sourceTab.view.webContents.getURL())) return null;
+    if (tabs.shellContentsForWindow(winOf(e)) !== e.sender) return null;
+    const entry = visionOverlays.get(senderWid);
+    if (!entry || entry.tabId !== sourceTab.id || entry.url !== sourceTab.view.webContents.getURL() || entry.expires < Date.now()) return null;
+    return { wid: senderWid, record, tab: sourceTab, entry };
+  }
+
+  ipcMain.handle('prism:vision-overlay:set', (e, { wid, open }) => {
+    const senderWid = activeWid(e);
+    if (tabs.shellContentsForWindow(winOf(e)) !== e.sender) return false;
+    if (!senderWid || (wid && wid !== senderWid)) return false;
+    if (open) return false;
+    if (!open) {
+      visionOverlays.delete(senderWid);
+      tabs.setVisionOverlay(senderWid, false);
+      return true;
+    }
+    return false;
+  });
+
+  ipcMain.handle('prism:vision-overlay:open', async (e, { wid, tabId }) => {
+    const senderWid = activeWid(e);
+    if (tabs.shellContentsForWindow(winOf(e)) !== e.sender) return { error: 'Prism Vision is only available from the browser toolbar.' };
+    if (!senderWid || (wid && wid !== senderWid)) return { error: 'This window cannot capture another browser window.' };
+    const record = tabs.windowRecord(senderWid);
+    const tab = tabId ? tabs.tabs.get(tabId) : tabs.activeTab(senderWid);
+    if (!record || !tab || tab.winId !== senderWid || tab.id !== record.active) return { error: 'There is no active page to select.' };
+    const wc = tab.view.webContents;
+    if (!/^https?:/i.test(wc.getURL())) return { error: 'Open a web page first.' };
+    try {
+      const captured = await wc.capturePage();
+      const png = captured.toPNG();
+      if (!png || !png.length) return { error: 'That page returned an empty screenshot.' };
+      let text = '';
+      try { text = await wc.executeJavaScript("(document.body && document.body.innerText || '').replace(/\\n{3,}/g, '\\n\\n').trim().slice(0, 6000)"); } catch (_) {}
+      const entry = { tabId: tab.id, image: 'data:image/png;base64,' + png.toString('base64'), text,
+        title: wc.getTitle() || '', url: wc.getURL(), expires: Date.now() + 10 * 60 * 1000 };
+      visionOverlays.set(senderWid, entry);
+      tabs.setVisionOverlay(senderWid, true);
+      const shell = tabs.shellContents(senderWid);
+      if (!shell) { visionOverlays.delete(senderWid); tabs.setVisionOverlay(senderWid, false); return { error: 'Prism Vision is unavailable.' }; }
+      shell.send('prism:vision-overlay:state', { open: true, capture: { image: entry.image, title: entry.title, url: entry.url, tabId: entry.tabId } });
+      return { ok: true };
+    } catch (error) { return { error: (error && error.message) || 'That page could not be captured.' }; }
+  });
+
+  ipcMain.handle('prism:vision-overlay:capture', (e, { wid, tabId }) => {
+    const session = shellVisionSession(e, wid, tabId);
+    if (!session) return { error: 'That Prism Vision selection is no longer available.' };
+    return { text: session.entry.text, title: session.entry.title, url: session.entry.url };
+  });
+
+  ipcMain.handle('prism:vision-overlay:analyse', (e, { wid, tabId, image, task }) => {
+    const off = aiOff();
+    if (off) return off;
+    const session = shellVisionSession(e, wid, tabId);
+    if (!session) return { error: 'That Prism Vision selection is no longer available.' };
+    const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(String(image || ''));
+    if (!match || match[1].length > 8 * 1024 * 1024) return { error: 'The selected image is invalid or too large.' };
+    return ai.analyseImage(image, { task: task || 'caption' })
+      .then((result) => ({ result }))
+      .catch((error) => ({ error: (error && error.message) || 'Prism Vision could not analyse this selection.' }));
+  });
+
+  ipcMain.handle('prism:vision-overlay:summarise', (e, { wid, tabId }) => {
+    const session = shellVisionSession(e, wid, tabId);
+    const off = aiOff();
+    if (off) return off;
+    if (!session) return { error: 'That Prism Vision selection is no longer available.' };
+    return ai.summarise(session.entry.text, { style: settings.get('ai.summaryStyle') || 'paragraph' })
+      .then((result) => ({ result }))
+      .catch((error) => ({ error: (error && error.message) || 'This page could not be summarised.' }));
+  });
+
+  // A capture is held only until the exact Prism Vision tab claims it.
+
+  // A capture is held only until the exact Prism Vision tab claims it.
+  const pendingVisionCaptures = new Map();
+
+  // Screenshots the requested tab; only the current window's tab may be read.
+  // capturePage returns the visible viewport, which is what the user sees.
+  ipcMain.handle('prism:ai:open-vision', async (e, { wid, tabId }) => {
+    const senderWid = activeWid(e);
+    const targetWid = wid || senderWid;
+    if (!senderWid || targetWid !== senderWid) return { error: 'This window cannot capture another browser window.' };
+    const record = tabs.windowRecord(targetWid);
+    if (!record) return { error: 'The browser window is no longer available.' };
+    const tab = tabId ? tabs.tabs.get(tabId) : tabs.activeTab(targetWid);
+    if (!tab || tab.winId !== targetWid) return { error: 'There is no active tab to look at.' };
+    let url = tab.view.webContents.getURL();
+    if (!/^https?:/i.test(url)) return { error: 'Open a web page first.' };
+    try {
+      let image = '';
+      let captureError = '';
+      try {
+        const captured = await tab.view.webContents.capturePage();
+        const png = captured.toPNG();
+        if (png && png.length) image = 'data:image/png;base64,' + png.toString('base64');
+        else captureError = 'That page returned an empty screenshot.';
+      } catch (error) {
+        captureError = (error && error.message) || 'That page could not be captured.';
+      }
+      let text = '';
+      try { text = await tab.view.webContents.executeJavaScript("(document.body && document.body.innerText || '').replace(/\\n{3,}/g, '\\n\\n').trim().slice(0, 6000)"); } catch (_) {}
+      let title = '';
+      try { title = await tab.view.webContents.executeJavaScript('document.title || ""'); } catch (_) {}
+      const source = { image, text, title, url, sourceTabId: tab.id, error: captureError };
+      const visionTab = tabs.createTab(targetWid, 'about:blank');
+      if (!visionTab) return { error: 'Could not open Prism Vision.' };
+      const visionContents = tabs.tabs.get(visionTab).view.webContents;
+      // Register the capture before navigating so the new page cannot race its
+      // preload handshake and miss the screenshot payload. It is deleted after
+      // a successful claim, not while the page reloads.
+      pendingVisionCaptures.set(visionTab, source);
+      visionContents.once('destroyed', () => {
+        pendingVisionCaptures.delete(visionTab);
+        visionClaims.delete(visionTab);
+      });
+      try { await visionContents.loadURL('prism://vision'); }
+      catch (error) { return { error: (error && error.message) || 'Prism Vision could not be opened.' }; }
+      return { ok: true, tabId: visionTab };
+    } catch (err) {
+      return { error: (err && err.message) || 'That page could not be captured.' };
+    }
+  });
+
+  ipcMain.handle('prism:ai:capture', async (e, { tabId } = {}) => {
+    const visionTab = tabs._tabByWebContentsId(e.sender);
+    const claim = visionTab && visionClaims.get(visionTab.id);
+    const linkedSource = claim && claim.sourceTabId ? tabs.tabs.get(claim.sourceTabId) : null;
+    if (!visionTab || !claim || !claim.sourceTabId || !linkedSource || linkedSource.winId !== visionTab.winId || claim.expires < Date.now() || (tabId && claim.sourceTabId !== tabId)) {
+      return { error: 'This capture is no longer available. Open Prism Vision from a web page to capture it.' };
+    }
+    const tab = linkedSource;
+    const wc = linkedSource.view.webContents;
+    if (!wc || wc.isDestroyed()) return { error: 'The captured page is no longer available.' };
     if (!/^https?:/i.test(wc.getURL())) return { error: 'Open a web page first.' };
     try {
       const image = await wc.capturePage();
       const png = image.toPNG();
       if (!png || !png.length) return { error: 'That page could not be captured.' };
-      return { image: 'data:image/png;base64,' + png.toString('base64') };
+      let text = '';
+      try {
+        text = await wc.executeJavaScript("(document.body && document.body.innerText || '').replace(/\\n{3,}/g, '\\n\\n').trim().slice(0, 6000)");
+      } catch (_) { text = ''; }
+      let title = '';
+      try { title = await wc.executeJavaScript('document.title || ""'); } catch (_) {}
+      return { image: 'data:image/png;base64,' + png.toString('base64'), text, title, url: wc.getURL(), sourceTabId: tab.id };
     } catch (err) {
       return { error: (err && err.message) || 'That page could not be captured.' };
+    }
+  });
+
+  ipcMain.handle('prism:ai:copy-image', (e, { image }) => {
+    const visionTab = tabs._tabByWebContentsId(e.sender);
+    const claim = visionTab && visionClaims.get(visionTab.id);
+    if (!claim || claim.expires < Date.now()) return { error: 'Open Prism Vision from a page before copying selections.' };
+    const match = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(String(image || ''));
+    if (!match) return { error: 'There is no image to copy.' };
+    try {
+      const value = nativeImage.createFromBuffer(Buffer.from(match[1], 'base64'));
+      if (value.isEmpty()) return { error: 'That image could not be copied.' };
+      clipboard.writeImage(value);
+      return { ok: true };
+    } catch (err) {
+      return { error: (err && err.message) || 'That image could not be copied.' };
     }
   });
 
@@ -500,9 +776,14 @@ try {
     ? { error: 'Local AI is turned off in Settings.' }
     : null);
 
-  ipcMain.handle('prism:ai:vision', (_e, { image, task, input }) => {
+  ipcMain.handle('prism:ai:vision', (e, { image, task, input }) => {
     const off = aiOff();
     if (off) return off;
+    const visionTab = tabs._tabByWebContentsId(e.sender);
+    const claim = visionTab && visionClaims.get(visionTab.id);
+    if (!visionTab || !/^prism:\/\/vision(?:[/?#]|$)/i.test(e.sender.getURL()) || !claim || claim.expires < Date.now()) {
+      return { error: 'Open Prism Vision from a page before analysing an image.' };
+    }
     return ai.analyseImage(image, { task, input })
       .then((result) => ({ result }))
       .catch((err) => ({ error: (err && err.message) || 'Prism Vision could not read that image.' }));
@@ -531,15 +812,33 @@ try {
 
   // Lets an internal page summarise text it already has (for example a
   // selection) rather than only the active tab.
-  ipcMain.handle('prism:ai:summarise-text', (_e, { text, style }) => {
+  ipcMain.handle('prism:ai:summarise-text', (e, { text, style }) => {
     const off = aiOff();
     if (off) return off;
+    const visionTab = tabs._tabByWebContentsId(e.sender);
+    const claim = visionTab && visionClaims.get(visionTab.id);
+    if (!visionTab || !/^prism:\/\/vision(?:[/?#]|$)/i.test(e.sender.getURL()) || !claim || claim.expires < Date.now()) {
+      return { error: 'Open Prism Vision from a page before analysing text.' };
+    }
     return ai.summarise(text, { style: style || settings.get('ai.summaryStyle') || 'paragraph' })
       .then((result) => ({ result }))
       .catch((err) => ({ error: (err && err.message) || 'That could not be summarised.' }));
   });
 
   ipcMain.handle('prism:ai:translation-languages', () => ai.translationLanguages());
+
+  ipcMain.handle('prism:ai:translate-text', (e, { text, source, target }) => {
+    const off = aiOff();
+    if (off) return off;
+    const visionTab = tabs._tabByWebContentsId(e.sender);
+    const claim = visionTab && visionClaims.get(visionTab.id);
+    if (!visionTab || !/^prism:\/\/vision(?:[/?#]|$)/i.test(e.sender.getURL()) || !claim || claim.expires < Date.now()) {
+      return { error: 'Open Prism Vision from a page before translating text.' };
+    }
+    return ai.translate(text, { source, target })
+      .then((result) => ({ result }))
+      .catch((error) => ({ error: (error && error.message) || 'That text could not be translated.' }));
+  });
 
   ipcMain.handle('prism:ai:translate', async (e, { wid, source, target }) => {
     const off = aiOff();
@@ -560,7 +859,10 @@ try {
     }
   });
 
-  ipcMain.handle('prism:ai:clear-cache', () => ai.clearCache());
+  ipcMain.handle('prism:ai:clear-cache', (e) => {
+    if (!aiManagementAccess(e)) return { error: 'Local AI model settings are not available in this page.' };
+    return ai.clearCache();
+  });
 }
 
 const SITE_DATA_STORAGES = ['cookies', 'localstorage', 'indexdb', 'shadercache', 'websql', 'serviceworkers', 'cachestorage'];

@@ -229,8 +229,36 @@ for (const channel of ['prism:ai:status', 'prism:ai:vision', 'prism:ai:summarise
 
 const pageSrc = fs.readFileSync(path.join(ROOT, 'src', 'pages', 'vision.html'), 'utf8');
 check('the Vision page exists as a page', fs.existsSync(path.join(ROOT, 'src', 'pages', 'vision.html')));
-check('the Vision page builds Prism UI', /PrismUI\.boot\(\)/.test(pageSrc));
-check('the Vision page renders from the task table', /aiTasks\(\)/.test(pageSrc));
+check('tabs resolves Vision IPC by WebContents identity or id',
+  /const id = typeof wcId === 'number' \? wcId : wcId && wcId\.id/.test(fs.readFileSync(path.join(ROOT, 'src', 'main', 'tabs.js'), 'utf8')));
+check('the Vision page builds Prism UI', /src="\/common\.js"/.test(pageSrc) && /src="\/vision-ui\.js"/.test(pageSrc));
+check('the Vision page renders from the task table', /aiTasks\(\)/.test(fs.readFileSync(path.join(ROOT, 'src', 'pages', 'vision-ui.js'), 'utf8')));
+check('the Lens-style Vision page has a capture stage and right-side overview',
+  /class="capture-column"/.test(pageSrc) && /class="aside"/.test(pageSrc) && /id="overview-text"/.test(pageSrc));
+check('Vision does not claim to return online matches', /never uploads your image to a search engine/.test(pageSrc));
+check('Vision discloses an unavailable screen capture instead of treating it as a fatal open failure',
+  /captureError =/.test(ipcSrc) && /Screenshot capture was unavailable/.test(fs.readFileSync(path.join(ROOT, 'src', 'pages', 'vision-ui.js'), 'utf8')));
+check('the Vision preload only exposes the private local capture API',
+  /aiTakeCapture: \(\) => ipcRenderer\.invoke\('prism:ai:vision-session'\)/.test(fs.readFileSync(path.join(ROOT, 'src', 'preload', 'page.js'), 'utf8')) &&
+  /aiCopyImage:/.test(fs.readFileSync(path.join(ROOT, 'src', 'preload', 'page.js'), 'utf8')));
+check('Prism Vision opens as a capture-backed in-browser overlay instead of a new tab',
+  /prism:vision-overlay:open/.test(ipcSrc) && /'ai-vision': \(\) => openVisionOverlay\(\)/.test(shellSrc) &&
+  /S\.aiOpenVision\(WID, state\.active\.id\)/.test(shellSrc) && /tabs\.setVisionOverlay\(senderWid, true\)/.test(ipcSrc) &&
+  /id="prism-vision-overlay"/.test(fs.readFileSync(path.join(ROOT, 'src', 'shell', 'index.html'), 'utf8')));
+check('Vision page initializes its local AI session after opening from the shell',
+  /prism:ai:vision-session/.test(ipcSrc) && /aiTakeCapture:/.test(fs.readFileSync(path.join(ROOT, 'src', 'preload', 'page.js'), 'utf8')) &&
+  /window\.prism\.aiTakeCapture\(\)/.test(fs.readFileSync(path.join(ROOT, 'src', 'pages', 'vision-ui.js'), 'utf8')));
+check('local AI settings APIs remain available to the internal Settings page',
+  /function aiManagementAccess\(e\)/.test(ipcSrc) && /page\.hostname === 'settings'/.test(ipcSrc) &&
+  /ipcMain\.handle\('prism:ai:status', \(e\) => \{\s*if \(!aiManagementAccess\(e\)\)/.test(ipcSrc) &&
+  /ipcMain\.handle\('prism:ai:clear-cache', \(e\) => \{\s*if \(!aiManagementAccess\(e\)\)/.test(ipcSrc));
+check('the integration smoke verifies drag analysis and Escape dismissal without opening a tab',
+  /sourceUrl/.test(fs.readFileSync(path.join(ROOT, 'test', 'vision-ui.test.js'), 'utf8')) &&
+  /pointerdown/.test(fs.readFileSync(path.join(ROOT, 'test', 'vision-ui.test.js'), 'utf8')) &&
+  /must not add or activate a new browser tab/.test(fs.readFileSync(path.join(ROOT, 'test', 'vision-ui.test.js'), 'utf8')) &&
+  /Escape to close Vision/.test(fs.readFileSync(path.join(ROOT, 'test', 'vision-ui.test.js'), 'utf8')));
+check('the model worker configures bounded CPU session threads',
+  /intraOpNumThreads:\s*CPU_THREADS/.test(workerSrc) && /interOpNumThreads:\s*1/.test(workerSrc));
 
 // ---------- downscaling ----------
 
@@ -421,7 +449,7 @@ check('the release gates on both model steps',
 
 // The Vision page must not claim models are downloaded when they are not.
 check('the Vision page distinguishes bundled from downloaded models',
-  /st\.bundled/.test(pageSrc) && /works offline/.test(pageSrc));
+  /info\.bundled/.test(fs.readFileSync(path.join(ROOT, 'src', 'pages', 'vision-ui.js'), 'utf8')) && /works offline/.test(fs.readFileSync(path.join(ROOT, 'src', 'pages', 'vision-ui.js'), 'utf8')));
 check('the Vision page only offers to delete the extra downloads',
   /Delete extra downloads/.test(pageSrc));
 
@@ -457,6 +485,7 @@ check('the Settings page says where the models came from',
 
 check('npm test runs the AI unit tests', /node test\/ai\.test\.js/.test(pkg.scripts.test));
 check('npm test runs the AI end-to-end test', /electron test\/ai-ui\.test\.js/.test(pkg.scripts.test));
+check('the Vision UI smoke test exists', fs.existsSync(path.join(ROOT, 'test', 'vision-ui.test.js')));
 
 // If the models have been staged, check the staged tree really is loadable: one
 // directory per repo id, with config.json and at least one ONNX session in it.

@@ -72,11 +72,13 @@ function renderTabs() {
     .filter((node) => node.classList.contains('tab') && !node.classList.contains('tab-leaving'))
     .map((node) => [node.dataset.tabId, node]));
   const currentIds = new Set(state.tabs.map((tab) => tab.id));
-  const animationTheme = document.documentElement.dataset.animationTheme || 'basic';
+  const animationTheme = document.documentElement.dataset.animationTheme || 'fluent';
   const reduceMotion = animationTheme === 'off' ||
     document.documentElement.dataset.reduceMotion === 'reduce' ||
     (document.documentElement.dataset.reduceMotion === 'system' && matchMedia('(prefers-reduced-motion: reduce)').matches);
   const animateTabs = animationTheme !== 'off' && !reduceMotion;
+  const enteringDuration = { fluent: 320, spring: 390, arcade: 250, minimal: 220 }[animationTheme] || 320;
+  const leavingDuration = { fluent: 260, spring: 330, arcade: 200, minimal: 180 }[animationTheme] || 260;
   const leaving = animateTabs
     ? Array.from(existing.values()).filter((node) => !currentIds.has(node.dataset.tabId))
     : [];
@@ -86,7 +88,7 @@ function renderTabs() {
     div.dataset.tabId = t.id;
     if (animateTabs && !existing.has(t.id) && !enteringTabIds.has(t.id)) {
       enteringTabIds.add(t.id);
-      const duration = animationTheme === 'playful' ? 360 : animationTheme === 'smooth' ? 320 : 260;
+      const duration = enteringDuration + 40;
       setTimeout(() => {
         enteringTabIds.delete(t.id);
         const current = wrap.querySelector('.tab[data-tab-id="' + t.id + '"]');
@@ -134,7 +136,7 @@ function renderTabs() {
   for (const node of leaving) {
     node.classList.add('tab-leaving');
     wrap.appendChild(node);
-    setTimeout(() => node.remove(), animationTheme === 'playful' ? 340 : animationTheme === 'smooth' ? 260 : 200);
+    setTimeout(() => node.remove(), leavingDuration);
   }
 }
 
@@ -279,13 +281,186 @@ function hideDropdown() {
   omniRows = []; omniSel = -1;
 }
 
+// ---------- Prism Vision overlay ----------
+let visionTabId = null;
+let visionImage = new Image();
+let visionDragging = false;
+let visionStart = null;
+let visionRect = null;
+let visionBusy = false;
+let visionOverlayActive = false;
+
+function setVisionStatus(message) { $('vision-overlay-status').textContent = message || ''; }
+function closeVisionOverlay() {
+  visionTabId = null;
+  visionDragging = false;
+  visionStart = null;
+  visionRect = null;
+  $('prism-vision-overlay').hidden = true;
+  $('vision-overlay-image').removeAttribute('src');
+  $('vision-overlay-selection').hidden = true;
+  if (visionOverlayActive) S.setVisionOverlay(WID, false);
+  visionOverlayActive = false;
+  syncExtentNow();
+}
+
+async function openVisionOverlay() {
+  if (state.settings && state.settings.ai && state.settings.ai.enabled === false) {
+    return toast('Local AI is off', 'Turn it back on in Settings to use Prism Vision.');
+  }
+  if (!state.active || !/^https?:/i.test(state.active.url || '')) {
+    return toast('Prism Vision', 'Open a website first, then select anything you want to explore.');
+  }
+  const summary = $('vision-overlay-summary');
+  summary.textContent = 'Capturing the visible page…';
+  $('vision-overlay-source').textContent = state.active.title || state.active.url;
+  $('vision-overlay-describe').disabled = true;
+  $('vision-overlay-read').disabled = true;
+  $('prism-vision-overlay').hidden = false;
+  visionOverlayActive = false;
+  syncExtentNow();
+  try {
+    const result = await S.aiOpenVision(WID, state.active.id);
+    if (!result || result.error) throw new Error((result && result.error) || 'Could not capture this page.');
+  } catch (error) {
+    closeVisionOverlay();
+    toast('Prism Vision unavailable', error.message || 'Could not capture this page.', true);
+  }
+}
+
+S.onVisionPageFocused(() => { if (!$('prism-vision-overlay').hidden) closeVisionOverlay(); });
+S.onVisionOverlay(({ open, capture }) => {
+  if (!open) { closeVisionOverlay(); return; }
+  visionTabId = capture && capture.tabId;
+  if (!capture || !capture.image || !visionTabId || !state.active || state.active.id !== visionTabId) {
+    setVisionStatus('Screenshot unavailable');
+    $('vision-overlay-summary').textContent = 'This page could not be captured. Try another page.';
+    return;
+  }
+  visionOverlayActive = true;
+  $('vision-overlay-source').textContent = capture.title || capture.url || 'Current page';
+  const image = $('vision-overlay-image');
+  image.onload = () => {
+    visionRect = null;
+    $('vision-overlay-selection').hidden = true;
+    $('vision-overlay-summary').textContent = 'Drag across the page to select an area. Prism will describe it using on-device AI.';
+    setVisionStatus('Drag to select');
+    $('vision-overlay-describe').disabled = true;
+    $('vision-overlay-read').disabled = false;
+  };
+  image.src = capture.image;
+});
+S.watchAi();
+S.onVisionProgress((event) => {
+  if (event && event.stage === 'loading') setVisionStatus('Loading local model…');
+  else if (event && event.stage === 'running') setVisionStatus('Analysing on this device…');
+  else if (event && event.stage === 'crashed') setVisionStatus(event.error || 'Local AI stopped');
+});
+
+function visionPoint(event) {
+  const rect = $('vision-overlay-image').getBoundingClientRect();
+  return { x: Math.max(0, Math.min(rect.width, event.clientX - rect.left)) + rect.left - $('vision-overlay-stage').getBoundingClientRect().left,
+    y: Math.max(0, Math.min(rect.height, event.clientY - rect.top)) + rect.top - $('vision-overlay-stage').getBoundingClientRect().top };
+}
+function paintVisionSelection() {
+  const frame = $('vision-overlay-selection');
+  if (!visionRect) { frame.hidden = true; $('vision-overlay-describe').disabled = true; return; }
+  frame.hidden = false;
+  frame.style.left = visionRect.x + 'px'; frame.style.top = visionRect.y + 'px';
+  frame.style.width = visionRect.width + 'px'; frame.style.height = visionRect.height + 'px';
+  $('vision-overlay-describe').disabled = visionBusy || visionRect.width < 12 || visionRect.height < 12;
+}
+
+async function visionSelectedImage() {
+  const img = $('vision-overlay-image');
+  if (!img.naturalWidth || !visionRect) return '';
+  const imageBox = img.getBoundingClientRect();
+  const stageBox = $('vision-overlay-stage').getBoundingClientRect();
+  const x = visionRect.x - (imageBox.left - stageBox.left);
+  const y = visionRect.y - (imageBox.top - stageBox.top);
+  const sx = img.naturalWidth / imageBox.width, sy = img.naturalHeight / imageBox.height;
+  const rect = { x: x * sx, y: y * sy, width: visionRect.width * sx, height: visionRect.height * sy };
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(rect.width)); canvas.height = Math.max(1, Math.round(rect.height));
+  canvas.getContext('2d').drawImage(img, rect.x, rect.y, rect.width, rect.height, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/png');
+}
+
+async function analyseVisionSelection(task) {
+  if (!visionRect || !visionTabId || visionBusy) return;
+  visionBusy = true;
+  $('vision-overlay-describe').disabled = true;
+  $('vision-overlay-read').disabled = true;
+  setVisionStatus('Analysing on this device…');
+  $('vision-overlay-summary').textContent = 'Prism is looking at your selection locally…';
+  try {
+    const image = await visionSelectedImage();
+    const response = await S.analyseVisionSelection(WID, visionTabId, image, task || 'caption');
+    if (response && response.error) throw new Error(response.error);
+    const result = response && response.result;
+    $('vision-overlay-summary').textContent = (result && result.text) || 'The local model returned no description.';
+    setVisionStatus(result && result.ms ? 'Generated locally in ' + (result.ms / 1000).toFixed(1) + 's' : 'Generated by on-device AI');
+  } catch (error) {
+    $('vision-overlay-summary').textContent = error.message || 'Could not analyse this selection.';
+    setVisionStatus('Local analysis failed');
+  } finally {
+    visionBusy = false;
+    $('vision-overlay-read').disabled = false;
+    paintVisionSelection();
+  }
+}
+
+$('vision-overlay-stage').addEventListener('pointerdown', (event) => {
+  const imageBox = $('vision-overlay-image').getBoundingClientRect();
+  if ($('prism-vision-overlay').hidden || visionBusy || !imageBox.width || !imageBox.height ||
+      event.clientX < imageBox.left || event.clientX > imageBox.right || event.clientY < imageBox.top || event.clientY > imageBox.bottom) return;
+  event.preventDefault();
+  visionDragging = true;
+  visionStart = visionPoint(event);
+  visionRect = { x: visionStart.x, y: visionStart.y, width: 0, height: 0 };
+  $('vision-overlay-stage').setPointerCapture(event.pointerId);
+  paintVisionSelection();
+});
+$('vision-overlay-stage').addEventListener('pointermove', (event) => {
+  if (!visionDragging || !visionStart) return;
+  const end = visionPoint(event);
+  visionRect = { x: Math.min(visionStart.x, end.x), y: Math.min(visionStart.y, end.y),
+    width: Math.abs(end.x - visionStart.x), height: Math.abs(end.y - visionStart.y) };
+  paintVisionSelection();
+});
+$('vision-overlay-stage').addEventListener('pointerup', (event) => {
+  if (!visionDragging) return;
+  visionDragging = false;
+  try { $('vision-overlay-stage').releasePointerCapture(event.pointerId); } catch (_) {}
+  if (visionRect && visionRect.width >= 12 && visionRect.height >= 12) analyseVisionSelection('caption');
+  else { visionRect = null; paintVisionSelection(); }
+});
+$('vision-overlay-stage').addEventListener('pointercancel', () => { visionDragging = false; });
+$('vision-overlay-describe').addEventListener('click', () => analyseVisionSelection('detail'));
+$('vision-overlay-read').addEventListener('click', async () => {
+  if (!visionTabId || visionBusy) return;
+  try {
+    const capture = await S.captureVisionSelection(WID, visionTabId);
+    if (capture && capture.error) throw new Error(capture.error);
+    if (!capture.text || capture.text.trim().length < 40) throw new Error('There is not enough readable page text to summarize. Select a visual region instead.');
+    visionBusy = true; $('vision-overlay-read').disabled = true; $('vision-overlay-describe').disabled = true;
+    setVisionStatus('Summarising page text locally…'); $('vision-overlay-summary').textContent = 'Writing a local AI Overview…';
+    const response = await S.aiSummariseText(WID, visionTabId, capture.text);
+    if (response && response.error) throw new Error(response.error);
+    $('vision-overlay-summary').textContent = response.result && response.result.text || 'No summary was returned.';
+    setVisionStatus('Generated by on-device AI');
+  } catch (error) { $('vision-overlay-summary').textContent = error.message || 'Could not summarise page text.'; setVisionStatus('Ready'); }
+  finally { visionBusy = false; $('vision-overlay-read').disabled = false; paintVisionSelection(); }
+});
+$('vision-overlay-close').addEventListener('click', closeVisionOverlay);
+
 // ---------- shell extent ----------
 // The shell is a native view stacked ABOVE the page, so its bounds must grow
 // to cover anything that hangs below the chrome (dropdown, menus, findbar,
 // toasts) — otherwise the page hides them. Poll once per frame and report the
 // bottom edge; main applies it as the shell view's height. Overlays are all
 // top-anchored so a single rectangle from y=0 always covers them.
-const OVERLAY_IDS = ['omni-dropdown', 'menu-panel', 'menu-sub', 'shield-pop', 'ext-pop', 'theme-pop', 'translation-pop', 'findbar', 'load-progress', 'toasts', 'status-bubble'];
+const OVERLAY_IDS = ['omni-dropdown', 'menu-panel', 'menu-sub', 'shield-pop', 'ext-pop', 'theme-pop', 'translation-pop', 'findbar', 'load-progress', 'toasts', 'status-bubble', 'prism-vision-overlay'];
 let lastExtent = -1;
 function computeNeed() {
   try {
@@ -823,17 +998,11 @@ const MENU_ACTIONS = {
   'group-close-all': () => S.tabGroups('close-all').then(() => toast('Tab groups closed', 'Grouped tabs were closed.')),
   'focus-group': (row) => S.tabGroups('focus', row.dataset.payload),
   'translate': () => translateActivePage(),
-  // Prism AI. The Vision page captures the active tab itself when it opens, so
-  // this only has to navigate; summarise runs against the active tab and
-  // reports back as a toast like the other page-level actions.
-  // Local AI can be switched off in Settings. Say so before opening a page
+  // Prism AI captures the active web page before opening Vision; summarise runs
+  // against the active tab and reports back as a toast.
+  // Local AI can be switched off in Settings. Say so before opening Vision.
   // whose only purpose is to run a model the user has turned off.
-  'ai-vision': () => {
-    if (state.settings && state.settings.ai && state.settings.ai.enabled === false) {
-      return toast('Local AI is off', 'Turn it back on in Settings to use Prism Vision.');
-    }
-    return S.newTab(WID, 'prism://vision');
-  },
+  'ai-vision': () => openVisionOverlay(),
   'ai-summarise': () => summariseActivePage(),
   'ai-accessibility': () => summariseActivePage('plain', 'Plain-language summary'),
   'ai-security-check': () => checkActivePageThreatLists(),
@@ -1211,13 +1380,16 @@ function applyTheme() {
   if (window.PrismTheme) {
     window.PrismTheme.apply(document.documentElement, appearance);
   } else document.documentElement.dataset.theme = state.theme || 'dark';
+  const cursor = appearance.pixelCursor === false ? 'auto' : 'var(--cursor-image, auto)';
+  document.documentElement.style.setProperty('--cursor-pointer', cursor);
   // Keep the shell's own mirror in step; internal pages do the same from the
   // preset, and the site-theme path in the main process reads it.
   if (window.PrismTheme) state.theme = document.documentElement.dataset.theme;
   document.documentElement.dataset.motionPreference =
     (state.appearance && state.appearance.accessibility && state.appearance.accessibility.reducedMotion) || 'system';
   document.documentElement.dataset.animationTheme =
-    ['basic', 'smooth', 'playful', 'off'].includes(appearance.animationTheme) ? appearance.animationTheme : 'basic';
+    ({ basic: 'fluent', smooth: 'fluent', playful: 'spring' })[appearance.animationTheme] ||
+    (['fluent', 'spring', 'arcade', 'minimal', 'off'].includes(appearance.animationTheme) ? appearance.animationTheme : 'fluent');
 }
 
 // ---------- quick theme controls ----------
@@ -1246,7 +1418,7 @@ function renderThemePresets() {
     const list = document.createElement('div');
     list.className = 'theme-preset-grid';
     for (const item of items) {
-      const resolved = window.PrismTheme.resolve(item.id);
+      const resolved = window.PrismTheme.resolve({ themePreset: item.id });
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'theme-preset';
@@ -1264,7 +1436,13 @@ function renderThemePresets() {
       label.className = 'theme-preset-name';
       label.textContent = item.name;
       button.appendChild(label);
-      button.addEventListener('click', () => applyThemePatch({ themePreset: item.id, theme: resolved.dark ? 'dark' : 'light' }));
+      button.addEventListener('click', () => applyThemePatch({
+        themePreset: item.id,
+        theme: resolved.dark ? 'dark' : 'light',
+        customBackground: null,
+        customAccent: null,
+        customFrame: null
+      }));
       list.appendChild(button);
     }
     host.append(heading, list);
@@ -1284,6 +1462,9 @@ function syncThemeControls() {
 function applyThemePatch(patch) {
   const appearance = Object.assign({}, state.appearance || {}, patch);
   state.appearance = appearance;
+  if (Object.prototype.hasOwnProperty.call(patch, 'customBackground') && window.PrismTheme) {
+    appearance.theme = window.PrismTheme.resolve(appearance).dark ? 'dark' : 'light';
+  }
   state.theme = appearance.theme || state.theme;
   applyTheme();
   // Update immediately but coalesce the encrypted persistence write while a
@@ -1336,7 +1517,13 @@ $('theme-random').addEventListener('click', () => {
   const current = (state.appearance && state.appearance.themePreset) || '';
   const id = window.PrismTheme.randomPresetId(current);
   const resolved = window.PrismTheme.resolve(id);
-  applyThemePatch({ themePreset: id, theme: resolved.dark ? 'dark' : 'light' });
+  applyThemePatch({
+    themePreset: id,
+    theme: resolved.dark ? 'dark' : 'light',
+    customBackground: null,
+    customAccent: null,
+    customFrame: null
+  });
 });
 $('theme-all').addEventListener('click', () => { themePop.style.display = 'none'; S.newTab(WID, 'prism://settings#appearance'); syncExtentNow(); });
 $('theme-accessibility').addEventListener('click', () => { themePop.style.display = 'none'; S.newTab(WID, 'prism://settings#accessibility'); syncExtentNow(); });
@@ -1522,7 +1709,8 @@ S.onDownloadThreat(({ filename, threat }) => {
 
 window.addEventListener('keydown', (ev) => {
   if (ev.key === 'Escape') {
-    if ($('menu-panel').style.display !== 'none' || $('menu-sub').style.display !== 'none') closeMenu();
+    if (!$('prism-vision-overlay').hidden) closeVisionOverlay();
+    else if ($('menu-panel').style.display !== 'none' || $('menu-sub').style.display !== 'none') closeMenu();
     else if ($('translation-pop').style.display !== 'none') { $('translation-pop').style.display = 'none'; syncExtentNow(); }
     else if (findVisible) closeFind();
   }

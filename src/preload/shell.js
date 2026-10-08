@@ -13,6 +13,14 @@ contextBridge.exposeInMainWorld('prismShell', {
   // without this those overlays would be clipped away.
   reportShellExtent: (wid, height) =>
     ipcRenderer.send('prism:shell-extent', { wid, height: Math.round(height) }),
+  setVisionOverlay: (wid, open) => ipcRenderer.invoke('prism:vision-overlay:set', { wid, open }),
+  captureVisionSelection: (wid, tabId) => ipcRenderer.invoke('prism:vision-overlay:capture', { wid, tabId }),
+  analyseVisionSelection: (wid, tabId, image, task) => ipcRenderer.invoke('prism:vision-overlay:analyse', { wid, tabId, image, task }),
+  aiSummariseText: (wid, tabId, text) => ipcRenderer.invoke('prism:vision-overlay:summarise', { wid, tabId, text }),
+  onVisionOverlay: (fn) => ipcRenderer.on('prism:vision-overlay:state', (_e, data) => fn(data)),
+  onVisionPageFocused: (fn) => ipcRenderer.on('prism:vision-overlay:page-focused', () => fn()),
+  onVisionProgress: (fn) => ipcRenderer.on('prism:ai:progress', (_e, data) => fn(data)),
+  watchAi: () => ipcRenderer.invoke('prism:ai:watch'),
 
   // Extensions, for the toolbar puzzle-piece dropdown.
   extensionsList: () => ipcRenderer.invoke('prism:extensions:list'),
@@ -88,7 +96,8 @@ contextBridge.exposeInMainWorld('prismShell', {
 
   // local AI
   aiStatus: () => ipcRenderer.invoke('prism:ai:status'),
-  aiCapture: () => ipcRenderer.invoke('prism:ai:capture'),
+  aiOpenVision: (wid, tabId) => ipcRenderer.invoke('prism:vision-overlay:open', { wid, tabId }),
+  aiCapture: (tabId) => ipcRenderer.invoke('prism:ai:capture', { tabId }),
   aiVision: (image, task, input) => ipcRenderer.invoke('prism:ai:vision', { image, task, input }),
   aiSummarise: (style) => ipcRenderer.invoke('prism:ai:summarise', { style }),
   aiTranslate: (wid, source, target) => ipcRenderer.invoke('prism:ai:translate', { wid, source, target }),

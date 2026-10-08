@@ -69,7 +69,7 @@ function handlePrism(request) {
     // arbitrary repository paths through the custom scheme.
     if (pathname.startsWith('/shared/')) {
       const rel = pathname.slice('/shared/'.length);
-      if (!/^(theme-engine|common)(\.js|\.css)$/.test(rel)) return new Response('Forbidden', { status: 403 });
+      if (!/^(theme-engine|pixel-cursor|common)(\.js|\.css)$/.test(rel)) return new Response('Forbidden', { status: 403 });
       const abs = safeJoin(PAGES_ROOT, rel);
       return abs ? serveFile(abs) : new Response('Not found', { status: 404 });
     }

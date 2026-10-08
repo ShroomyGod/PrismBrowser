@@ -6,260 +6,146 @@
 <link rel="stylesheet" href="/common.css">
 <title>Prism Vision - Prism</title>
 <style>
-  .vision-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
-  @media (max-width: 860px) { .vision-grid { grid-template-columns: 1fr; } }
-
-  /* Drop target doubles as the image preview, so the page has one focal point
-     instead of a separate preview pane. */
-  .drop {
-    border: 1.5px dashed var(--line); border-radius: 10px; background: var(--panel, rgba(127,127,127,.05));
-    min-height: 260px; display: flex; align-items: center; justify-content: center;
-    padding: 14px; text-align: center; cursor: pointer; transition: border-color .15s, background .15s;
-  }
-  .drop.over { border-color: var(--accent); }
-  .drop img { max-width: 100%; max-height: 420px; border-radius: 6px; display: block; }
-  .drop .ph { color: var(--dim); font-size: 13px; max-width: 320px; }
-
-  .tasks { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 0; }
-  .tasks button.on { border-color: var(--accent); color: var(--accent); }
-
-  #out { margin-top: 12px; min-height: 76px; white-space: pre-wrap; word-break: break-word;
-         font-size: 14px; line-height: 1.55; }
-  #out.empty { color: var(--dim); }
-
-  .bar { height: 3px; border-radius: 2px; background: var(--line); overflow: hidden; margin-top: 12px; display: none; }
+  body { background: #111318; min-height: 100vh; }
+  .wrap { max-width: none; width: 100%; padding: 0; }
+  .topnav, .page-head { display: none; }
+  .vision-app { min-height: 100vh; display: grid; grid-template-columns: minmax(0, 1fr) minmax(330px, 430px); }
+  .capture-column { min-width: 0; display: flex; flex-direction: column; min-height: 100vh; padding: 16px 22px 20px; background: #111318; }
+  .capture-head { height: 42px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .capture-head strong { font-size: 15px; }
+  .source-label { color: #a4a9b2; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .capture-screen { flex: 1; min-height: 340px; position: relative; display: flex; align-items: center; justify-content: center; padding: 22px 0; }
+  #screen-stage { position: relative; display: flex; justify-content: center; align-items: center; max-width: 100%; max-height: 100%; }
+  #screen-image { display: block; max-width: min(100%, 1120px); max-height: calc(100vh - 180px); width: auto; height: auto; object-fit: contain; user-select: none; -webkit-user-drag: none; cursor: crosshair; border-radius: 4px; }
+  #empty-screen { border: 1px dashed #444852; border-radius: 14px; padding: 52px 34px; text-align: center; color: #bec3cc; max-width: 430px; line-height: 1.6; }
+  #drop-overlay { display: block; margin: 18px auto 0; padding: 7px 12px; background: #292d35; border-color: #454b58; color: #e3e6ed; }
+  #empty-screen b { display: block; color: #fff; font-size: 18px; margin-bottom: 8px; }
+  #selection { position: absolute; z-index: 2; border: 2px solid #fff; border-radius: 12px; box-shadow: 0 0 0 9999px rgba(0,0,0,.53), 0 0 30px rgba(120,175,255,.46); cursor: pointer; pointer-events: auto; }
+  #selection:before, #selection:after { content: ""; position: absolute; inset: 0; background: linear-gradient(#fff,#fff) left top / 18px 3px no-repeat, linear-gradient(#fff,#fff) left top / 3px 18px no-repeat, linear-gradient(#fff,#fff) right top / 18px 3px no-repeat, linear-gradient(#fff,#fff) right top / 3px 18px no-repeat, linear-gradient(#fff,#fff) left bottom / 18px 3px no-repeat, linear-gradient(#fff,#fff) left bottom / 3px 18px no-repeat, linear-gradient(#fff,#fff) right bottom / 18px 3px no-repeat, linear-gradient(#fff,#fff) right bottom / 3px 18px no-repeat; border-radius: 10px; }
+  .capture-actions { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 9px; min-height: 48px; }
+  .capture-actions button { border-radius: 24px; background: #f0f2f6; color: #17191e; border: 0; padding: 10px 16px; font-size: 13px; font-weight: 600; }
+  .capture-actions button:hover { background: #fff; transform: translateY(-1px); }
+  .capture-actions button:disabled { opacity: .45; cursor: default; }
+  .capture-actions button.primary { background: #dce8ff; }
+  .capture-actions select, .capture-actions input { background: #22252c; border-color: #383c45; color: #e5e7eb; border-radius: 18px; padding: 8px 12px; font-size: 12px; }
+  #vision-query { width: 170px; }
+  .aside { height: 100vh; overflow-y: auto; border-left: 1px solid #363940; background: #202228; color: #e8eaf0; padding: 16px 17px 24px; }
+  .search-pill { display: flex; align-items: center; gap: 12px; border-radius: 26px; padding: 10px 14px; background: #30333a; font-size: 13px; min-height: 48px; }
+  .prism-mark { width: 23px; height: 23px; border-radius: 50%; display: inline-grid; place-items: center; background: #dce8ff; color: #1b2738; font-weight: 800; }
+  .thumb { width: 36px; height: 26px; object-fit: cover; border-radius: 5px; background: #111; }
+  .tab-row { display: flex; gap: 18px; border-bottom: 1px solid #3a3d44; padding: 14px 3px 12px; color: #a8abb3; font-size: 12px; font-weight: 600; }
+  .tab-row button { padding: 0 0 5px; border: 0; border-radius: 0; background: none; color: inherit; font-size: inherit; }
+  .tab-row button.selected { color: #f5f5f5; border-bottom: 2px solid #dce8ff; }
+  .overview { padding: 18px 0 22px; min-height: 290px; border-bottom: 1px solid #41444a; }
+  .overview-title { font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 9px; margin-bottom: 15px; }
+  .spark { color: #9fc4ff; font-size: 21px; }
+  #overview-text { color: #d4d6dc; font-size: 14px; line-height: 1.62; white-space: pre-wrap; }
+  .source-info { margin-top: 12px; font-size: 11px; color: #969aa4; overflow-wrap: anywhere; }
+  #summary-time { margin-top: 8px; color: #969aa4; font-size: 11px; }
+  .visual { padding: 18px 0 8px; }
+  .visual h2 { font-size: 17px; margin: 0 0 9px; color: #eff0f5; }
+  .visual-note { color: #a9adb6; font-size: 11px; margin: 0 0 13px; line-height: 1.5; }
+  .visual-card { border: 1px solid #3b3e45; border-radius: 12px; padding: 10px; background: #272a31; }
+  .visual-card img { display: block; width: 100%; max-height: 154px; object-fit: cover; border-radius: 8px; background: #16181d; }
+  .visual-card p { margin: 9px 0 1px; font-size: 12px; line-height: 1.4; color: #d7d9df; }
+  .visual-card .local-badge { color: #a9caff; font-size: 10px; }
+  .bar { height: 3px; border-radius: 4px; background: #393d46; overflow: hidden; margin: 10px 0 4px; display: none; }
   .bar.on { display: block; }
-  .bar > i { display: block; height: 100%; width: 35%; background: var(--accent);
-             animation: slide 1.1s ease-in-out infinite; }
-  @keyframes slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(320%); } }
-
-  #query { width: 100%; margin-top: 10px; }
-  .row-between { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-  .models { font-size: 13px; }
-  .models code { background: var(--panel, rgba(127,127,127,.12)); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  .bar i { display: block; height: 100%; width: 32%; background: #aacbff; animation: slide 1s infinite ease-in-out; }
+  @keyframes slide { from { transform: translateX(-120%); } to { transform: translateX(360%); } }
+  .status { min-height: 18px; text-align: center; color: #afb4be; font-size: 12px; padding: 4px 12px 2px; }
+  .result-card { margin-top: 12px; border-radius: 10px; padding: 12px; background: #202733; color: #e3e8f2; }
+  #result-text { font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
+  .subtle-button { background: transparent !important; color: #b5c5df !important; border: 1px solid #4b5360 !important; padding: 6px 9px !important; font-weight: 500 !important; }
+  .model-card { margin-top: 24px; border-top: 1px solid #41444a; padding-top: 14px; }
+  .model-card summary { cursor: pointer; font-size: 12px; color: #a8adb8; }
+  .models { font-size: 11px; line-height: 1.7; margin-top: 9px; color: #a8adb8; }
+  .models code { color: #d7dce6; background: #32353d; padding: 1px 4px; border-radius: 4px; }
+  #progress { margin-top: 3px; }
+  @media (max-width: 930px) {
+    .vision-app { grid-template-columns: 1fr; }
+    .capture-column { min-height: 62vh; }
+    .capture-screen { min-height: 260px; }
+    #screen-image { max-height: 55vh; }
+    .aside { height: auto; min-height: 34vh; border-left: 0; border-top: 1px solid #363940; }
+    .overview { min-height: 180px; }
+  }
+  @media (max-width: 500px) {
+    .capture-column { padding: 10px 12px 14px; }
+    .aside { padding: 13px 14px 20px; }
+    .tab-row { gap: 12px; }
+    .capture-actions { gap: 6px; }
+    .capture-actions button { padding: 9px 12px; }
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="topnav">
-    <a href="/newtab">New Tab</a>
-    <a href="/history">History</a>
-    <a href="/downloads">Downloads</a>
-    <a href="/extensions">Extensions</a>
-    <a href="/vision" class="on">Prism Vision</a>
-    <a href="/settings">Settings</a>
-  </div>
-  <div class="page-head">
-    <img class="wordmark" src="/assets/wordmark@2x.png" alt="Prism">
-    <h1>Prism Vision</h1>
-  </div>
-
-  <div class="card">
-    <div class="muted" style="margin-bottom:12px">
-      Everything here runs on this device. Images and page text are analysed by a local
-      model and never sent anywhere.
-    </div>
-
-    <div class="vision-grid">
-      <div>
-        <div id="drop" class="drop" role="button" tabindex="0" aria-label="Choose or drop an image">
-          <div id="ph" class="ph">Drop an image here, paste one, or click to choose a file.</div>
+  <div class="vision-app">
+    <main class="capture-column">
+      <header class="capture-head">
+        <strong>Prism Vision</strong>
+        <span class="source-label" id="source-title">Private · on-device analysis</span>
+        <button id="upload" class="subtle-button" type="button">Open image</button>
+        <input id="image-file" type="file" accept="image/*" hidden>
+      </header>
+      <div class="capture-screen">
+        <div id="screen-stage">
+          <div id="empty-screen"><b>Capture something to explore</b>Use the menu to capture your current web page, drop an image here, or open a local image. Everything is processed on this device.<button id="drop-overlay" type="button">Choose an image</button></div>
+          <img id="screen-image" alt="Captured page or selected image" hidden>
+          <div id="selection" aria-label="Selected image region; click to clear" title="Click to clear selection" hidden></div>
         </div>
-        <input id="file" type="file" accept="image/*" hidden>
-
-        <div id="tasks" class="tasks" role="group" aria-label="What to do with the image"></div>
-        <input id="query" type="text" placeholder="What should Prism look for?" hidden>
-        <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
-          <button id="run" type="button" disabled>Run on this device</button>
-          <button id="recapture" type="button" class="small" hidden>Use the page I am on</button>
-          <button id="copy" type="button" class="small" hidden>Copy result</button>
-        </div>
-        <div id="bar" class="bar"><i></i></div>
       </div>
-
-      <div>
-        <h3 style="margin:0 0 6px; font-size:13px; letter-spacing:.04em; text-transform:uppercase; color:var(--dim)">Result</h3>
-        <div id="out" class="empty">No image analysed yet.</div>
-        <div id="timing" class="muted" style="margin-top:10px; font-size:12px"></div>
+      <div class="capture-actions">
+        <button id="copy-text" class="action" type="button" disabled>▢ &nbsp;Copy text</button>
+        <button id="translate" class="action" type="button" disabled>文 &nbsp;Translate</button>
+        <select id="source-language" aria-label="Translate from"><option value="en">English</option><option value="es">Spanish</option><option value="fr">French</option><option value="de">German</option><option value="ja">Japanese</option></select>
+        <select id="target-language" aria-label="Translate to"><option value="es">Spanish</option><option value="fr">French</option><option value="de">German</option><option value="ja">Japanese</option><option value="en">English</option></select>
+        <button id="copy-image" class="action" type="button" disabled>▧ &nbsp;Copy as image</button>
+        <select id="task-select" aria-label="Local image analysis task"></select>
+        <input id="vision-query" type="text" placeholder="What should I find?" aria-label="Describe what to find" hidden>
+        <button id="describe" class="action primary" type="button" disabled>✦ &nbsp;Describe selection</button>
+        <button id="clear-selection" class="subtle-button" type="button">Clear selection</button>
+        <button id="recapture" class="subtle-button" type="button" hidden>Capture again</button>
       </div>
-    </div>
-  </div>
-
-  <div class="card" id="models" style="margin-top:16px">
-    <div class="row-between">
-      <h3 style="margin:0; font-size:14px">Local models</h3>
-      <button id="clear-cache" class="small">Delete extra downloads</button>
-    </div>
-    <div class="models muted" style="margin-top:10px" id="model-note">Checking…</div>
+      <div id="status" class="status" role="status" aria-live="polite"></div>
+      <div id="progress" class="bar"><i></i></div>
+      <section id="result-card" class="result-card" hidden>
+        <div id="result-text"></div>
+      </section>
+    </main>
+    <aside class="aside">
+      <div class="search-pill"><span class="prism-mark">✦</span><img id="mini-image" class="thumb" alt="" hidden><span id="source-url">Ask about this capture</span></div>
+      <nav class="tab-row" aria-label="Result view"><button id="all-tab" class="selected" data-tab="all" type="button">AI Overview</button><button id="exact-tab" data-tab="exact" type="button">Exact matches</button><button id="visual-tab" data-tab="visual" type="button">Visual matches</button></nav>
+      <div data-panel="all">
+        <section class="overview">
+          <div class="overview-title"><span class="spark">✦</span> AI Overview <button id="retry-summary" class="subtle-button" type="button">Summarise again</button></div>
+          <div id="overview-text">Capture a page or select an image to get a local AI Overview.</div>
+          <div id="summary-time">Your capture stays on this device.</div>
+          <div class="source-info" id="source-info">No image or page text is sent to an online service.</div>
+          <div id="result-card-proxy" hidden></div>
+        </section>
+        <section class="visual">
+          <h2>Visual matches</h2>
+          <p class="visual-note">Local descriptions from your selected image, not internet search results.</p>
+          <div class="visual-card">
+            <img id="visual-image" alt="Your selected image preview" hidden>
+            <p id="visual-caption">Run local analysis to describe this image.</p>
+            <span class="local-badge">On-device · no external matches</span>
+          </div>
+        </section>
+      </div>
+      <section data-panel="exact" hidden class="overview"><div class="overview-title">Exact matches</div><p>Online exact-match lookup is not enabled. Prism never uploads your image to a search engine.</p></section>
+      <section data-panel="visual" hidden class="visual"><h2>Local visual description</h2><p class="visual-note">Run a local analysis to inspect the selected area. Prism does not fabricate web matches.</p><div id="visual-local-result"></div></section>
+      <details class="model-card" id="models">
+        <summary>Local models & storage</summary>
+        <div id="model-note" class="models">Checking local models…</div>
+        <button id="clear-cache" type="button" class="subtle-button">Delete extra downloads</button>
+      </details>
+    </aside>
   </div>
 </div>
 <script src="/common.js"></script>
-<script>
-(async function () {
-  await PrismUI.boot();
-  window.prism.aiWatch();
-
-  const $ = (id) => document.getElementById(id);
-  const drop = $('drop'), ph = $('ph'), file = $('file'), out = $('out');
-  const bar = $('bar'), run = $('run'), timing = $('timing');
-  const query = $('query'), copy = $('copy'), recapture = $('recapture');
-
-  // Task list comes from src/ai/tasks.js via the main process so the page and
-  // the model can never disagree about what is supported. The same call also
-  // carries the user's choices: which tasks are on, and whether local AI is on
-  // at all.
-  let tasks = [];
-  let aiEnabled = true;
-  try {
-    const meta = await window.prism.aiTasks();
-    tasks = meta.vision || [];
-    aiEnabled = meta.enabled !== false;
-  } catch (_) { tasks = []; }
-
-  let current = tasks[0] ? tasks[0].id : 'caption';
-  let image = null;
-
-  function setBusy(on, message) {
-    bar.classList.toggle('on', on);
-    run.disabled = on || !image;
-    recapture.disabled = on;
-    if (message) note(message);
-  }
-
-  function note(message) {
-    out.textContent = message || 'No image analysed yet.';
-    out.classList.toggle('empty', !message || message === 'No image analysed yet.');
-  }
-
-  function showResult(text, ms) {
-    out.textContent = text || 'The model returned nothing for this image.';
-    out.classList.toggle('empty', !text);
-    timing.textContent = ms ? 'Took ' + (ms / 1000).toFixed(1) + 's on this device.' : '';
-    copy.hidden = !text;
-  }
-
-  tasks.forEach((t) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'small' + (t.id === current ? ' on' : '');
-    b.textContent = t.label;
-    b.title = t.hint;
-    b.addEventListener('click', () => {
-      current = t.id;
-      document.querySelectorAll('#tasks button').forEach((el, i) => {
-        el.classList.toggle('on', tasks[i].id === current);
-      });
-      query.hidden = !t.needsInput;
-      run.disabled = !image;
-    });
-    $('tasks').appendChild(b);
-  });
-
-  function accept(dataUrl) {
-    image = dataUrl;
-    ph.hidden = true;
-    let img = drop.querySelector('img');
-    if (!img) { img = document.createElement('img'); img.alt = 'The image being analysed'; drop.appendChild(img); }
-    img.src = dataUrl;
-    run.disabled = false;
-    note('Ready. Choose what to do with it.');
-  }
-
-  // A file from disk, downscaled if huge so a 20MP photo does not spend ten
-  // seconds being encoded before the model ever sees it.
-  function readFile(f) {
-    if (!f || !/^image\//.test(f.type)) return;
-    const reader = new FileReader();
-    reader.onload = () => accept(String(reader.result));
-    reader.readAsDataURL(f);
-  }
-
-  drop.addEventListener('click', () => file.click());
-  drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); file.click(); } });
-  file.addEventListener('change', () => readFile(file.files && file.files[0]));
-  ['dragenter', 'dragover'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over'); }));
-  ['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove('over'); }));
-  drop.addEventListener('drop', (e) => {
-    const dt = e.dataTransfer;
-    if (dt && dt.files && dt.files[0]) readFile(dt.files[0]);
-  });
-  document.addEventListener('paste', (e) => {
-    for (const item of e.clipboardData.items) {
-      if (item.type.indexOf('image/') === 0) { readFile(item.getAsFile()); return; }
-    }
-  });
-
-  recapture.addEventListener('click', async () => {
-    setBusy(true, 'Capturing the page you are on…');
-    const res = await window.prism.aiCapture();
-    if (res && res.error) { setBusy(false); note(res.error); return; }
-    accept(res.image);
-    setBusy(false);
-  });
-
-  if (!aiEnabled) {
-    // Turned off in Settings: the page still opens, but it must not pretend to
-    // be one keystroke away from running a model the user switched off.
-    run.disabled = true;
-    note('Local AI is turned off in Settings.');
-  }
-
-  run.addEventListener('click', async () => {
-    if (!image) return;
-    setBusy(true, 'Working on it…');
-    const res = await window.prism.aiVision(image, current, query.value);
-    if (res && res.error) { setBusy(false); note(res.error); return; }
-    showResult((res.result && res.result.text) || '', (res.result || {}).ms);
-    setBusy(false);
-  });
-
-  copy.addEventListener('click', () => {
-    const text = out.textContent || '';
-    if (text) navigator.clipboard.writeText(text);
-  });
-
-  // Model downloads are slow the first time; say so instead of appearing hung.
-  window.prism.onAiProgress((p) => {
-    if (!p) return;
-    if (p.stage === 'loading') note('Loading ' + (p.model || 'the model') + ' the first time…');
-    else if (p.stage === 'running') note('Working on it…');
-    else if (p.stage === 'crashed') { setBusy(false); note(p.error || 'The AI engine stopped.'); }
-  });
-
-  async function refreshModels() {
-    const note$ = $('model-note');
-    try {
-      const st = await window.prism.aiStatus();
-      const mb = (st.cache.bytes / 1048576).toFixed(1);
-      // Say plainly where the weights came from: an installed Prism already has
-      // them, and "downloaded on first use" would be a lie there.
-      const origin = st.bundled
-        ? 'Included with Prism, so this works offline. <span class="muted">' + st.bundledDir + '</span>'
-        : 'Not part of this build — they are fetched from Hugging Face on first use.';
-      note$.innerHTML =
-        '<div>Vision: <code>' + st.vision.id + '</code> (' + st.vision.dtype + ')</div>' +
-        '<div>Text: <code>' + st.text.id + '</code> (' + st.text.dtype + ')</div>' +
-        '<div style="margin-top:6px">' + origin + '</div>' +
-        '<div style="margin-top:6px">' + (st.cache.files
-          ? st.cache.files + ' additional files, ' + mb + ' MB downloaded to ' + st.cache.dir
-          : 'No additional downloads.') + '</div>';
-    } catch (_) { note$.textContent = 'Local AI is unavailable.'; }
-  }
-
-  $('clear-cache').addEventListener('click', async () => {
-    $('clear-cache').disabled = true;
-    const res = await window.prism.aiClearCache();
-    $('clear-cache').disabled = false;
-    if (res && res.error) { $('model-note').textContent = 'Could not delete the downloads: ' + res.error; return; }
-    await refreshModels();
-  });
-
-  await refreshModels();
-
-  // #models is a real target from the menu so "Manage local models" lands here.
-  if (location.hash === '#models') $('models').scrollIntoView();
-  if (location.hash === '#capture') recapture.click();
-})();
-</script>
+<script src="/vision-ui.js"></script>
 </body>
 </html>

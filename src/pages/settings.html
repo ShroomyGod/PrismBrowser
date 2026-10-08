@@ -21,6 +21,14 @@
     <h1>Settings</h1>
   </div>
 
+  <h3>General</h3>
+  <div class="card">
+    <div class="setting-line">
+      <div class="info"><b>Default browser</b><div class="muted" id="default-browser-status">Checking Windows default-browser status…</div></div>
+      <button id="set-default-browser" type="button">Set as default</button>
+    </div>
+  </div>
+
   <h3 id="appearance">Appearance</h3>
   <div class="card">
     <div id="line-bookmarksbar"></div>
@@ -28,21 +36,62 @@
          the whole catalog on one scrollable page. Paging through 2,880 pages
          of generated swatches is gone along with the generator. -->
     <div class="setting-line">
-      <div class="info"><b>Theme</b><div class="muted">Applies to the browser chrome and internal pages. Every theme is a complete palette, not a generated gradient.</div></div>
-      <div class="row"><span id="theme-count" class="badge" style="position:static">124 themes</span><button id="random-theme" type="button">Surprise me</button></div>
+      <div class="info"><b>Theme</b><div class="muted">Applies to the browser chrome and internal pages. Signature themes pair curated palettes with original artwork.</div></div>
+      <div class="row"><span id="theme-count" class="badge" style="position:static">167 themes</span><button id="random-theme" type="button">Surprise me</button></div>
     </div>
     <div class="theme-gallery">
       <nav id="theme-categories" class="theme-categories" aria-label="Theme categories"></nav>
       <div id="theme-grid" class="theme-grid" role="group" aria-label="Themes"></div>
     </div>
+    <div class="setting-line"><div class="info"><b>Live browser preview</b><div class="muted">Your palette, artwork, motion, cursor, layout and typography update together as you customize.</div></div></div>
+    <div id="appearance-preview" class="appearance-preview" aria-label="Live preview of your browser appearance">
+      <div class="preview-tabstrip"><span class="preview-tab active">Prism home</span><span class="preview-tab">Research notes</span><span class="preview-tab preview-new">+</span></div>
+      <div class="preview-toolbar"><span>‹</span><span>›</span><span>↻</span><span class="preview-address">Search or enter address</span><span>☆</span><span>⋯</span></div>
+      <div class="preview-content"><span class="preview-eyebrow">YOUR BROWSER, YOUR STYLE</span><b>Make Prism feel like yours.</b><span>Pick a visual style, then tune the details.</span><div class="preview-swatch"><i></i><i></i><i></i></div></div>
+    </div>
     <div class="setting-line">
-      <div class="info"><label for="animation-theme"><b>Animation theme</b></label><div class="muted">Choose how tabs and browser controls animate.</div></div>
-      <select id="animation-theme">
-        <option value="basic">Basic (default)</option>
-        <option value="smooth">Smooth</option>
-        <option value="playful">Playful</option>
-        <option value="off">Off</option>
-      </select>
+      <div class="info"><label for="pixel-cursor"><b>Pixel-art cursor</b></label><div class="muted">Use a crisp, theme-tinted pixel pointer throughout browser pages.</div></div>
+      <label class="switch"><input id="pixel-cursor" type="checkbox"><span class="slider"></span></label>
+    </div>
+    <div class="setting-line">
+      <div class="info"><label for="ui-density"><b>Interface density</b></label><div class="muted">Set spacing across the tab strip, toolbar, and browser controls.</div></div>
+      <select id="ui-density"><option value="compact">Compact</option><option value="comfortable">Comfortable</option><option value="spacious">Spacious</option></select>
+    </div>
+    <div class="setting-line">
+      <div class="info"><label for="tab-style"><b>Tab shape</b></label><div class="muted">Choose how active and background tabs sit in the frame.</div></div>
+      <select id="tab-style"><option value="rounded">Rounded</option><option value="pill">Floating pills</option><option value="underline">Underline</option><option value="block">Squared</option></select>
+    </div>
+    <div class="setting-line">
+      <div class="info"><label for="ui-font"><b>Browser typography</b></label><div class="muted">Uses fonts already installed on your device; web page fonts are unchanged.</div></div>
+      <select id="ui-font"><option value="system">System</option><option value="rounded">Rounded</option><option value="mono">Monospace</option></select>
+    </div>
+    <div class="setting-line">
+      <div class="info"><label for="tab-width"><b>Tab width</b></label><div class="muted">Set the preferred width for each browser tab.</div></div>
+      <input id="tab-width" type="range" min="160" max="320" step="10" style="max-width:220px">
+      <output id="tab-width-value" for="tab-width">220px</output>
+    </div>
+    <div class="setting-line">
+      <div class="info"><label for="custom-background"><b>Custom surface</b></label><div class="muted">Personalize the background while keeping text contrast readable.</div></div>
+      <input id="custom-background" type="color" aria-label="Custom surface color">
+    </div>
+    <div class="setting-line">
+      <div class="info"><label for="custom-accent"><b>Custom accent</b></label><div class="muted">Override the selected theme's interaction color.</div></div>
+      <input id="custom-accent" type="color" aria-label="Custom accent color">
+    </div>
+    <div class="setting-line">
+      <div class="info"><label for="custom-frame"><b>Custom browser frame</b></label><div class="muted">Set a solid frame color independently from the page palette.</div></div>
+      <input id="custom-frame" type="color" aria-label="Custom browser frame color">
+      <button id="reset-custom-colors" class="small" type="button">Reset colors</button>
+    </div>
+    <div class="setting-line">
+      <div class="info"><label for="animation-theme"><b>Animation pack</b></label><div class="muted">A coordinated motion style for tabs, menus, buttons, and page controls. Reduced-motion preferences always take priority.</div></div>
+      <div id="animation-packs" class="animation-packs" role="group" aria-label="Animation packs">
+        <button class="animation-pack" type="button" data-animation="fluent" aria-pressed="false"><span class="pack-motion fluent-motion"><i></i><i></i><i></i></span><b>Fluent</b><small>Soft & polished</small></button>
+        <button class="animation-pack" type="button" data-animation="spring" aria-pressed="false"><span class="pack-motion spring-motion"><i></i><i></i><i></i></span><b>Spring</b><small>Gentle bounce</small></button>
+        <button class="animation-pack" type="button" data-animation="arcade" aria-pressed="false"><span class="pack-motion arcade-motion"><i></i><i></i><i></i></span><b>Arcade</b><small>Graphic & crisp</small></button>
+        <button class="animation-pack" type="button" data-animation="minimal" aria-pressed="false"><span class="pack-motion minimal-motion"><i></i><i></i><i></i></span><b>Minimal</b><small>Quiet fades</small></button>
+        <button class="animation-pack" type="button" data-animation="off" aria-pressed="false"><span class="pack-motion off-motion"><i></i><i></i><i></i></span><b>Off</b><small>No animation</small></button>
+      </div>
     </div>
     <div id="line-site-theme" class="setting-line">
       <div class="info"><b>Site theme</b><div class="muted">Never recolors page content. Auto only follows the browser on sites that opt in with a color-scheme declaration.</div></div>
@@ -170,6 +219,7 @@
   <div class="card" id="about"><div class="muted">Loading...</div></div>
 </div>
 <script src="prism://settings/shared/theme-engine.js"></script>
+<script src="prism://settings/shared/pixel-cursor.js"></script>
 <script src="/common.js"></script>
 <script>
 (async function () {
@@ -185,12 +235,45 @@
   // ---- appearance + theme gallery ----
   const accessibility = Object.assign({ textScale: 100, contrast: 'normal', largerTargets: false, reducedMotion: 'system', focusIndicators: true }, s.appearance.accessibility || {});
   let activePreset = PrismTheme.preset(s.appearance.themePreset).id;
+  const normalizeAnimation = (value) => ({ basic: 'fluent', smooth: 'fluent', playful: 'spring' })[value] ||
+    (['fluent', 'spring', 'arcade', 'minimal', 'off'].includes(value) ? value : 'fluent');
+  function syncCustomizationControls() {
+    $('pixel-cursor').checked = s.appearance.pixelCursor !== false;
+    $('ui-density').value = s.appearance.uiDensity || 'comfortable';
+    $('tab-style').value = s.appearance.tabStyle || 'rounded';
+    $('ui-font').value = s.appearance.uiFont || 'system';
+    $('tab-width').value = s.appearance.tabWidth || 220;
+    $('tab-width-value').value = (s.appearance.tabWidth || 220) + 'px';
+    const selectedAnimation = normalizeAnimation(s.appearance.animationTheme);
+    document.querySelectorAll('.animation-pack').forEach((pack) => pack.setAttribute('aria-pressed', String(pack.dataset.animation === selectedAnimation)));
+    const preset = PrismTheme.resolve(s.appearance);
+    $('appearance-preview').style.setProperty('--preview-tab-width', Math.round((s.appearance.tabWidth || 220) * 0.62) + 'px');
+    $('custom-background').value = s.appearance.customBackground || preset.bg;
+    $('custom-accent').value = s.appearance.customAccent || preset.vars['--accent'];
+    $('custom-frame').value = s.appearance.customFrame || preset.frame;
+  }
   function applyPageAppearance() {
     // Every preset declares whether it is light or dark, so there is no separate
     // base-theme control that could drift out of sync with the selection - the
     // theme *is* the preset.
-    const resolved = PrismTheme.resolve(s.appearance.themePreset);
+    const resolved = PrismTheme.resolve(s.appearance);
     PrismTheme.apply(document.documentElement, Object.assign({}, s.appearance, { theme: resolved.dark ? 'dark' : 'light', accessibility }));
+    $('appearance-preview').dataset.uiDensity = s.appearance.uiDensity || 'comfortable';
+    $('appearance-preview').dataset.tabStyle = s.appearance.tabStyle || 'rounded';
+    $('appearance-preview').dataset.animationTheme = normalizeAnimation(s.appearance.animationTheme);
+    $('appearance-preview').style.setProperty('--preview-font', document.documentElement.style.getPropertyValue('--ui-font'));
+    $('appearance-preview').style.setProperty('--preview-cursor', PrismPixelCursor.pointer(resolved.vars['--accent']));
+    $('appearance-preview').style.setProperty('--preview-cursor-image', PrismPixelCursor.icon(resolved.vars['--accent'], 'pointer'));
+    $('appearance-preview').dataset.pixelCursor = s.appearance.pixelCursor === false ? 'false' : 'true';
+    $('appearance-preview').style.setProperty('--preview-chrome', resolved.vars['--chrome-bg'] === 'none' ? resolved.frame : resolved.vars['--chrome-bg']);
+    $('appearance-preview').style.setProperty('--preview-chrome-size', resolved.vars['--chrome-background-size']);
+    $('appearance-preview').style.setProperty('--preview-artwork', resolved.vars['--page-artwork']);
+    $('appearance-preview').style.setProperty('--preview-chrome-color', resolved.frame);
+    $('appearance-preview').style.setProperty('--preview-active', resolved.vars['--chrome-active']);
+    $('appearance-preview').style.setProperty('--preview-ink', resolved.vars['--chrome-ink']);
+    $('appearance-preview').style.setProperty('--preview-page', resolved.bg);
+    $('appearance-preview').style.setProperty('--preview-line', resolved.vars['--line']);
+    $('appearance-preview').style.setProperty('--preview-accent', resolved.vars['--accent']);
   }
   let appearanceSaveTimer = null;
   let appearanceSaveQueue = Promise.resolve();
@@ -227,8 +310,12 @@
     appearanceDirty = true;
     s.appearance = Object.assign({}, s.appearance, patch);
     if (patch.themePreset) activePreset = PrismTheme.preset(patch.themePreset).id;
+    if (Object.prototype.hasOwnProperty.call(patch, 'customBackground')) {
+      s.appearance.theme = PrismTheme.resolve(s.appearance).dark ? 'dark' : 'light';
+    }
     if (patch.accessibility) Object.assign(accessibility, patch.accessibility);
     applyPageAppearance();
+    syncCustomizationControls();
     clearTimeout(appearanceSaveTimer);
     if (debounce) appearanceSaveTimer = setTimeout(persistAppearance, 160);
     else persistAppearance();
@@ -245,8 +332,7 @@
     activePreset = PrismTheme.preset(appearance.themePreset).id;
     Object.assign(accessibility, { textScale: 100, contrast: 'normal', largerTargets: false, reducedMotion: 'system', focusIndicators: true }, appearance.accessibility || {});
     $('siteTheme').value = s.appearance.siteTheme || 'auto';
-    $('animation-theme').value = ['basic', 'smooth', 'playful', 'off'].includes(s.appearance.animationTheme)
-      ? s.appearance.animationTheme : 'basic';
+    syncCustomizationControls();
     $('text-scale').value = accessibility.textScale;
     $('text-scale-value').value = accessibility.textScale + '%';
     $('contrast').value = accessibility.contrast;
@@ -259,12 +345,13 @@
     if (keyboard) keyboard.checked = !!accessibility.focusIndicators;
     applyPageAppearance();
     renderThemes();
+    $('pixel-cursor').checked = appearance.pixelCursor !== false;
   }
   // A card previews the theme it applies: the frame colour and texture sit
   // behind a mock tab strip and page, so the gallery shows what the browser
   // will actually look like rather than an abstract gradient chip.
   function themeCard(item) {
-    const resolved = PrismTheme.resolve(item.id);
+    const resolved = PrismTheme.resolve({ themePreset: item.id });
     const vars = resolved.vars;
     const card = document.createElement('button');
     card.type = 'button';
@@ -274,12 +361,16 @@
     card.setAttribute('aria-label', item.name + ' theme, ' + (resolved.dark ? 'dark' : 'light'));
     const thumb = document.createElement('span');
     thumb.className = 'theme-thumb';
+    thumb.dataset.artwork = String(Boolean(resolved.artwork));
     thumb.setAttribute('aria-hidden', 'true');
     thumb.style.setProperty('--thumb-color', vars['--chrome-color']);
+    thumb.style.setProperty('--thumb-cursor', PrismPixelCursor.icon(vars['--accent'], 'pointer'));
     thumb.style.setProperty('--thumb-image', vars['--chrome-bg']);
+    thumb.style.setProperty('--thumb-background-size', vars['--chrome-background-size']);
+    thumb.style.setProperty('--thumb-artwork', vars['--page-artwork']);
     thumb.style.setProperty('--thumb-active', vars['--chrome-active']);
     thumb.style.setProperty('--thumb-ink', vars['--chrome-ink']);
-    thumb.style.setProperty('--thumb-accent', vars['--chrome-accent']);
+    thumb.style.setProperty('--thumb-accent', vars['--accent']);
     thumb.style.setProperty('--thumb-page', vars['--bg']);
     thumb.style.setProperty('--thumb-page-line', vars['--line']);
     const tab = document.createElement('span');
@@ -289,6 +380,10 @@
     const page = document.createElement('span');
     page.className = 'theme-thumb-page';
     thumb.append(tab, toolbar, page);
+    const cursor = document.createElement('span');
+    cursor.className = 'theme-thumb-cursor';
+    cursor.setAttribute('aria-hidden', 'true');
+    thumb.appendChild(cursor);
     const name = document.createElement('span');
     name.className = 'theme-card-name';
     name.textContent = item.name;
@@ -306,7 +401,13 @@
     activePreset = resolved.id;
     // `theme` is written alongside the preset because site theming, the window
     // frame and the shell read it directly.
-    updateAppearance({ themePreset: resolved.id, theme: resolved.dark ? 'dark' : 'light' });
+    updateAppearance({
+      themePreset: resolved.id,
+      theme: resolved.dark ? 'dark' : 'light',
+      customBackground: null,
+      customAccent: null,
+      customFrame: null
+    });
     renderThemes();
   }
 
@@ -341,7 +442,7 @@
       section.append(heading, list);
       grid.appendChild(section);
     }
-    $('theme-count').textContent = PrismTheme.PRESETS.length + ' themes';
+    $('theme-count').textContent = PrismTheme.PRESETS.length + ' themes · ' + PrismTheme.PRESETS.filter((item) => item.artwork).length + ' illustrated';
     // Highlight the category the reader is actually looking at.
     if (window.IntersectionObserver) {
       const observer = new IntersectionObserver((entries) => {
@@ -358,9 +459,25 @@
   }
   $('siteTheme').value = s.appearance.siteTheme || 'auto';
   $('siteTheme').addEventListener('change', () => updateAppearance({ siteTheme: $('siteTheme').value }));
-  $('animation-theme').value = ['basic', 'smooth', 'playful', 'off'].includes(s.appearance.animationTheme)
-    ? s.appearance.animationTheme : 'basic';
-  $('animation-theme').addEventListener('change', () => updateAppearance({ animationTheme: $('animation-theme').value }));
+  $('pixel-cursor').addEventListener('change', () => updateAppearance({ pixelCursor: $('pixel-cursor').checked }));
+  syncCustomizationControls();
+  for (const [id, key] of [['ui-density', 'uiDensity'], ['tab-style', 'tabStyle'], ['ui-font', 'uiFont']]) {
+    $(id).addEventListener('change', () => updateAppearance({ [key]: $(id).value }));
+  }
+  $('tab-width').addEventListener('input', () => {
+    $('tab-width-value').value = $('tab-width').value + 'px';
+    updateAppearance({ tabWidth: Number($('tab-width').value) }, true);
+  });  $('tab-width').addEventListener('change', flushAppearance);
+  for (const [id, key] of [['custom-background', 'customBackground'], ['custom-accent', 'customAccent'], ['custom-frame', 'customFrame']]) {
+    $(id).addEventListener('input', () => updateAppearance({ [key]: $(id).value }));
+  }
+  $('reset-custom-colors').addEventListener('click', () => {
+    updateAppearance({ customBackground: null, customAccent: null, customFrame: null });
+    syncCustomizationControls();
+  });
+  document.querySelectorAll('.animation-pack').forEach((pack) => {
+    pack.addEventListener('click', () => updateAppearance({ animationTheme: pack.dataset.animation }));
+  });
   // "Surprise me" jumps to another curated theme rather than inventing one.
   $('random-theme').addEventListener('click', () => selectPreset(PrismTheme.randomPresetId(activePreset)));
   const bb = PrismUI.switchRow('Bookmarks bar', 'Show the bookmarks strip under the toolbar.', s.appearance.bookmarksBar, (v) => updateAppearance({ bookmarksBar: v }));
@@ -520,6 +637,36 @@
         ? 'Could not delete the downloads: ' + res.error
         : 'Extra downloads deleted. The models that came with Prism are untouched.';
     });
+  })();
+
+  // ---- default browser ----
+  (async function defaultBrowser() {
+    const button = $('set-default-browser');
+    const note = $('default-browser-status');
+    if (!window.prism.defaultBrowserStatus || !window.prism.openDefaultBrowserSettings) {
+      note.textContent = 'Default-browser setup is unavailable in this build.';
+      button.disabled = true;
+      return;
+    }
+    async function refresh() {
+      const status = await window.prism.defaultBrowserStatus();
+      button.disabled = !status.supported;
+      button.textContent = status.isDefault ? 'Default browser' : 'Set as default';
+      note.textContent = !status.supported
+        ? 'Changing the default browser is currently supported on Windows.'
+        : status.isDefault
+          ? 'Prism is your default for both HTTP and HTTPS links.'
+          : 'Windows controls this choice. Open Default Apps to choose Prism for HTTP and HTTPS.';
+    }
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      const result = await window.prism.openDefaultBrowserSettings();
+      if (result && result.error) note.textContent = result.error;
+      else if (result && result.ok) note.textContent = 'Choose Prism in Windows Default Apps for HTTP and HTTPS.';
+      button.disabled = false;
+      await refresh();
+    });
+    await refresh();
   })();
 
   // ---- about ----

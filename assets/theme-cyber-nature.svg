@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 150" preserveAspectRatio="xMidYMid slice">
+<defs>
+ <linearGradient id="night" x2="0" y2="1"><stop stop-color="#081314"/><stop offset=".48" stop-color="#0b1c1e"/><stop offset="1" stop-color="#071112"/></linearGradient>
+ <linearGradient id="leaf" x1="0" y1="1" x2="1" y2="0"><stop stop-color="#087867"/><stop offset=".42" stop-color="#27c99b"/><stop offset="1" stop-color="#a0ffe0"/></linearGradient>
+ <linearGradient id="leafDim" x1="0" y1="1" x2="1" y2="0"><stop stop-color="#0a514a"/><stop offset="1" stop-color="#29a98d"/></linearGradient>
+ <radialGradient id="mist"><stop stop-color="#18c8a4" stop-opacity=".28"/><stop offset="1" stop-color="#092021" stop-opacity="0"/></radialGradient>
+ <filter id="glow"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+</defs>
+<path fill="url(#night)" d="M0 0h1600v150H0z"/>
+<ellipse cx="810" cy="82" rx="720" ry="92" fill="url(#mist)"/>
+<g fill="none" stroke="#167e70" stroke-width="2" opacity=".78">
+ <path d="M-30 143Q170 12 395 52T825 80q230 34 410-41t400 16"/><path d="M110 150Q260 48 490 70t390 28q258 17 436-70t345 10"/><path d="M330 150Q451 68 625 65t386 47q209 31 390-55t247-2"/>
+</g>
+<!-- sweeping leaves, each with a fine luminous central vein -->
+<g stroke="#43d9b0" stroke-opacity=".7" stroke-width="1.2" filter="url(#glow)">
+ <path d="M35 108Q4 26 103 6q18 61-68 102z" fill="url(#leafDim)"/><path d="M43 101L94 17" fill="none"/>
+ <path d="M87 85Q83 11 171 0q9 66-84 85z" fill="url(#leaf)"/><path d="M91 80L160 10" fill="none"/>
+ <path d="M185 70Q178 5 259 3q7 54-74 67z" fill="url(#leafDim)"/><path d="M191 65L247 12" fill="none"/>
+ <path d="M342 47Q326-7 402 1q8 48-60 47z" fill="url(#leaf)"/><path d="M350 44L392 8" fill="none"/>
+ <path d="M490 48Q470-10 552 0q13 48-62 48z" fill="url(#leafDim)"/><path d="M498 45L541 8" fill="none"/>
+ <path d="M654 55Q635-5 715 0q13 51-61 55z" fill="url(#leaf)"/><path d="M662 51L704 8" fill="none"/>
+ <path d="M812 52Q799-10 878 1q8 50-59 51z" fill="url(#leafDim)"/><path d="M820 49L867 8" fill="none"/>
+ <path d="M973 42Q958-12 1038 0q9 46-60 42z" fill="url(#leaf)"/><path d="M981 39L1027 8" fill="none"/>
+ <path d="M1134 49Q1114-12 1195 0q12 49-61 49z" fill="url(#leafDim)"/><path d="M1142 45L1184 8" fill="none"/>
+ <path d="M1289 48Q1271-10 1352 0q12 50-62 48z" fill="url(#leaf)"/><path d="M1297 44L1342 8" fill="none"/>
+ <path d="M1450 57Q1425-10 1510 0q14 54-64 57z" fill="url(#leafDim)"/><path d="M1458 53L1500 8" fill="none"/>
+ <path d="M1550 111Q1514 30 1600 9q25 64-50 102z" fill="url(#leaf)"/><path d="M1557 104L1590 20" fill="none"/>
+</g>
+<!-- a lower, shadowed canopy creates depth without obscuring the toolbar -->
+<g fill="#0d4e48" opacity=".65">
+ <path d="M240 139q-24-51 34-67 14 41-34 67zM430 145q-18-59 47-69 9 47-47 69zM705 144q-27-57 36-77 20 46-36 77zM1001 145q-9-60 54-65 7 46-54 65zM1264 145q-20-55 43-74 17 46-43 74z"/>
+</g>
+<g fill="#73f7d2" filter="url(#glow)"><circle cx="304" cy="50" r="2"/><circle cx="585" cy="92" r="1.8"/><circle cx="901" cy="33" r="2.1"/><circle cx="1080" cy="80" r="1.7"/><circle cx="1390" cy="48" r="2"/></g>
+<path d="M0 148h1600" stroke="#29ba9e" stroke-opacity=".6"/>
+</svg>

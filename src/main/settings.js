@@ -16,7 +16,8 @@ const DEFAULTS = {
     downloadDir: '',
     // Prompts with a Save dialog per download. Declared for a long time and
     // never implemented; downloads.js now honours it.
-    askWhereToSave: false
+    askWhereToSave: false,
+    defaultBrowserPromptShown: false
   },
   search: {
     defaultEngine: 'google',
@@ -42,7 +43,15 @@ const DEFAULTS = {
     // Id from PrismTheme.PRESETS. Replaces the old free hue/saturation/gradient
     // generator, which produced mismatched colour combinations.
     themePreset: 'prism-dark',
-    animationTheme: 'basic', // basic | smooth | playful | off
+    customBackground: null,
+    customAccent: null,
+    customFrame: null,
+    pixelCursor: true,
+    uiDensity: 'comfortable',
+    tabStyle: 'rounded',
+    uiFont: 'system',
+    tabWidth: 220,
+    animationTheme: 'fluent', // fluent | spring | arcade | minimal | off
     accessibility: {
       textScale: 100, contrast: 'normal', largerTargets: false,
       reducedMotion: 'system', focusIndicators: true
@@ -210,6 +219,8 @@ class Settings {
     const tabs = require('./tabs');
     const siteThemeChanged = patch && patch.appearance && 'siteTheme' in patch.appearance;
     const searchConfigChanged = patch && patch.search && ('searxngUrl' in patch.search || 'searxngFallbacks' in patch.search);
+    const cursorAppearanceKeys = ['pixelCursor', 'themePreset', 'customAccent', 'customBackground', 'customFrame'];
+    const cursorAppearanceChanged = !!(patch && patch.appearance && cursorAppearanceKeys.some((key) => key in patch.appearance));
     if (searchConfigChanged) require('./prism-search-web')._reset();
     for (const win of BrowserWindow.getAllWindows()) {
       // The chrome lives in a child WebContentsView, not in win.webContents.
@@ -232,6 +243,7 @@ class Settings {
         tabs.reapplyCompatibleSiteThemeToAllTabs();
       }
     }
+    if (cursorAppearanceChanged) tabs.reapplyThemeCursorToAllTabs();
     return this.data;
   }
 

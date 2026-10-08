@@ -8,7 +8,7 @@
     "start": "electron .",
     "icons": "node scripts/process-logo.js",
     "release": "node scripts/release.js",
-    "test": "node test/search-web.test.js && node test/theme-engine.test.js && node test/update-identity.test.js && node test/adblock-matching.test.js && node test/release-helper.test.js && node test/release-git.test.js && node test/menu-items.test.js && node test/downloads-paths.test.js && node test/security-check-local.test.js && node test/ai.test.js && electron test/theme-ui.test.js && electron test/menu-ui.test.js && electron test/bookmarks-bar-ui.test.js && electron test/store-install.test.js && electron test/downloads-ui.test.js && electron test/translation-ui.test.js && electron test/ai-ui.test.js",
+    "test": "node test/search-web.test.js && node test/default-browser.test.js && node test/theme-engine.test.js && node test/update-identity.test.js && node test/adblock-matching.test.js && node test/release-helper.test.js && node test/release-git.test.js && node test/menu-items.test.js && node test/downloads-paths.test.js && node test/data-transfer.test.js && node test/security-check-local.test.js && electron test/passwords-transfer-ui.test.js && node test/ai.test.js && electron test/vision-ui.test.js && electron test/theme-ui.test.js && electron test/menu-ui.test.js && electron test/bookmarks-bar-ui.test.js && electron test/store-install.test.js && electron test/downloads-ui.test.js && electron test/translation-ui.test.js && electron test/ai-ui.test.js",
     "test:ui": "electron test/theme-ui.test.js",
     "build": "electron-builder --win --dir",
     "build:legacy": "electron-builder --win",
@@ -34,6 +34,8 @@
     "files": [
       "src/**/*",
       "assets/icon-*.png",
+      "assets/theme-*.svg",
+      "src/pages/pixel-cursor.js",
       "package.json",
       "assets/prism.ico",
       "assets/prism-logo.png",

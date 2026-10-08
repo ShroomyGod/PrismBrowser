@@ -208,6 +208,28 @@ class Stores {
     this.passwords.persist();
   }
 
+  importPasswords(entries) {
+    const p = this.passwords.ensure();
+    let added = 0, updated = 0;
+    for (const entry of entries || []) {
+      const found = p.entries.find((x) => x.origin === entry.origin && x.username === entry.username);
+      if (found) { found.password = entry.password; updated++; }
+      else {
+        p.entries.push({ id: crypto.randomUUID(), origin: entry.origin, username: entry.username,
+          password: entry.password, created: Date.now() });
+        added++;
+      }
+    }
+    if (added || updated) this.passwords.persist();
+    return { added, updated };
+  }
+
+  exportPasswords() {
+    return this.passwords.ensure().entries.map((entry) => ({
+      origin: entry.origin, username: entry.username, password: entry.password
+    }));
+  }
+
   removePassword(id) {
     const p = this.passwords.ensure();
     p.entries = p.entries.filter((x) => x.id !== id);

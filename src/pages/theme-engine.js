@@ -10,11 +10,9 @@
 // Instead every entry below is a hand-picked palette that already works: one
 // background, one ink, one accent, one frame colour. Everything else (the
 // surface ramp, borders, muted text, chrome highlight, texture overlay) is
-// derived from those four by mixing toward the ink, which is what keeps 120
-// themes internally consistent. Adding a theme means adding four colours.
-//
-// No theme assets or third-party dependencies: frames are CSS gradients and
-// repeating patterns, so the catalog costs no bytes of artwork.
+// derived from those four by mixing toward the ink, which is what keeps the
+// catalog internally consistent. Most themes use CSS finishes; a few signature
+// themes pair their palette with original, local SVG chrome artwork.
 'use strict';
 
 (function installThemeEngine(root) {
@@ -124,6 +122,7 @@
   ];
 
   const DEFAULT_PRESET = 'prism-dark';
+  const MIN_ILLUSTRATED_THEMES = 40;
 
   // ---- authoring helpers --------------------------------------------------
   // Compact on purpose: a theme is four colours and a couple of switches, and
@@ -222,6 +221,7 @@
     preset('lagoon', 'Lagoon', 'nature', true, '#0b2226', '#e0f4f2', '#4fd1c5', ['#12333a', '#0b2226', '#1a4a52'], { angle: 120, motion: 'breathe' }),
     preset('sunset-ridge', 'Sunset Ridge', 'nature', true, '#221420', '#f8e7f0', '#ff9e6b', ['#301c2c', '#221420', '#432a3d'], { angle: 110, motion: 'breathe' }),
     preset('rainforest', 'Rainforest', 'nature', true, '#0c1f14', '#e4f5e6', '#58c98a', ['#122c1d', '#0c1f14', '#1b4029'], { angle: 125 }),
+    preset('cyber-nature', 'Cyber Nature', 'nature', true, '#091719', '#e4fff8', '#5df0c1', ['#102b2b', '#0b1c20', '#123a36'], { artwork: 'theme-cyber-nature.svg', motion: 'breathe' }),
 
     // Textures — flat frames with a repeating overlay instead of artwork.
     preset('concrete', 'Concrete', 'textures', true, '#16181a', '#eceeee', '#9aa3ab', '#26292c', { pattern: 'grain' }),
@@ -260,8 +260,52 @@
     preset('neon-nights', 'Neon Nights', 'vivid', true, '#08060f', '#eae6ff', '#8b5cf6', ['#120e22', '#08060f', '#1d1736'], { angle: 115, motion: 'drift' }),
     preset('disco', 'Disco', 'vivid', true, '#150a1e', '#ffeaff', '#ff6ec7', ['#231129', '#150a1e', '#341a41'], { angle: 120, motion: 'pulse' }),
     preset('ultraviolet', 'Ultraviolet', 'vivid', true, '#0b0616', '#f0e6ff', '#b026ff', ['#150c26', '#0b0616', '#211138'], { angle: 115, motion: 'shimmer' }),
+    preset('cosmic', 'Cosmic', 'vivid', true, '#0b0d24', '#f3edff', '#b78bff', ['#13143b', '#10102b', '#241540'], { artwork: 'theme-cosmic.svg', motion: 'drift' }),
+    preset('graffiti', 'Graffiti', 'vivid', true, '#080d09', '#efffea', '#58ff24', ['#101e12', '#07120a', '#0d2815'], { artwork: 'theme-graffiti.svg' }),
 
     // Pastel and soft.
+    // Forty signature editions: bespoke scene art plus an individually tuned palette.
+    preset('neon-avenue', 'Neon Avenue', 'cinematic', true, '#10091b', '#f5edff', '#ff69c6', ['#170d29', '#10091b', '#351741'], { artwork: 'theme-neon-avenue.svg', motion: 'drift' }),
+    preset('violet-nebula', 'Violet Nebula', 'cinematic', true, '#110a26', '#f4efff', '#c68cff', ['#1b1038', '#110a26', '#352050'], { artwork: 'theme-violet-nebula.svg', motion: 'shimmer' }),
+    preset('aurora-fjord', 'Aurora Fjord', 'cinematic', true, '#091720', '#e8f7ff', '#6eead1', ['#102b3b', '#091720', '#164039'], { artwork: 'theme-aurora-fjord.svg', motion: 'breathe' }),
+    preset('eclipse-temple', 'Eclipse Temple', 'cinematic', true, '#100d23', '#f2edff', '#ffbe77', ['#201331', '#100d23', '#3b2548'], { artwork: 'theme-eclipse-temple.svg', motion: 'pulse' }),
+    preset('emerald-circuit', 'Emerald Circuit', 'cinematic', true, '#071817', '#e5fff5', '#51edba', ['#0d3028', '#071817', '#155044'], { artwork: 'theme-emerald-circuit.svg', motion: 'drift' }),
+    preset('deep-sea-signal', 'Deep Sea Signal', 'cinematic', true, '#061522', '#e4f8ff', '#42dfff', ['#0b2b43', '#061522', '#104b55'], { artwork: 'theme-deep-sea-signal.svg', motion: 'breathe' }),
+    preset('last-light', 'Last Light', 'cinematic', true, '#20101d', '#fff0dc', '#ff9b68', ['#3a1830', '#20101d', '#523126'], { artwork: 'theme-last-light.svg', motion: 'shimmer' }),
+    preset('chrome-dream', 'Chrome Dream', 'cinematic', true, '#101324', '#f2f5ff', '#a5baff', ['#1b2340', '#101324', '#3b2c55'], { artwork: 'theme-chrome-dream.svg', motion: 'wave' }),
+    preset('synthwave-coast', 'Synthwave Coast', 'vivid', true, '#110925', '#fff0ff', '#ff68d2', ['#211044', '#110925', '#40215b'], { artwork: 'theme-synthwave-coast.svg', motion: 'drift' }),
+    preset('stardust-bloom', 'Stardust Bloom', 'vivid', true, '#100a21', '#f5edff', '#ff94dd', ['#21133b', '#100a21', '#432655'], { artwork: 'theme-stardust-bloom.svg', motion: 'shimmer' }),
+    preset('pixel-comet', 'Pixel Comet', 'retro', true, '#080d22', '#ecf6ff', '#52ddff', ['#101c3a', '#080d22', '#223e58'], { artwork: 'theme-pixel-comet.svg', motion: 'pulse' }),
+    preset('neon-koi', 'Neon Koi', 'vivid', true, '#07171b', '#e9fff7', '#ff7b70', ['#0c2c32', '#07171b', '#144850'], { artwork: 'theme-neon-koi.svg', motion: 'breathe' }),
+    preset('ultraviolet-forest', 'Ultraviolet Forest', 'vivid', true, '#100a20', '#f2eaff', '#d78bff', ['#1c1031', '#100a20', '#3a2150'], { artwork: 'theme-ultraviolet-forest.svg', motion: 'drift' }),
+    preset('chromatic-crash', 'Chromatic Crash', 'vivid', true, '#11101c', '#fff0fb', '#ff77a8', ['#211229', '#11101c', '#392343'], { artwork: 'theme-chromatic-crash.svg', motion: 'wave' }),
+    preset('prism-canyon', 'Prism Canyon', 'vivid', true, '#1c1020', '#fff1df', '#ff9a75', ['#351c32', '#1c1020', '#51302a'], { artwork: 'theme-prism-canyon.svg', motion: 'breathe' }),
+    preset('night-drive', 'Night Drive', 'vivid', true, '#080d1d', '#eaf4ff', '#54d7ff', ['#10172d', '#080d1d', '#26304b'], { artwork: 'theme-night-drive.svg', motion: 'drift' }),
+    preset('solar-flare', 'Solar Flare', 'vivid', true, '#1b0b18', '#fff0dd', '#ff9b46', ['#341426', '#1b0b18', '#502821'], { artwork: 'theme-solar-flare.svg', motion: 'pulse' }),
+    preset('electric-meadow', 'Electric Meadow', 'vivid', true, '#091a16', '#efffee', '#77f06f', ['#102d1c', '#091a16', '#194330'], { artwork: 'theme-electric-meadow.svg', motion: 'shimmer' }),
+    preset('alpine-moon', 'Alpine Moon', 'nature', true, '#10172a', '#eff4ff', '#9ebaff', ['#192844', '#10172a', '#32435d'], { artwork: 'theme-alpine-moon.svg', motion: 'breathe' }),
+    preset('sakura-afterglow', 'Sakura Afterglow', 'nature', true, '#1d1020', '#fff0f4', '#ff9ebd', ['#321b34', '#1d1020', '#553043'], { artwork: 'theme-sakura-afterglow.svg', motion: 'shimmer' }),
+    preset('emberwood', 'Emberwood', 'nature', true, '#1b120e', '#fff0df', '#ff995c', ['#302019', '#1b120e', '#4b3022'], { artwork: 'theme-emberwood.svg', motion: 'breathe' }),
+    preset('coral-cathedral', 'Coral Cathedral', 'nature', true, '#071b23', '#e4fbf8', '#64efce', ['#103543', '#071b23', '#15505a'], { artwork: 'theme-coral-cathedral.svg', motion: 'drift' }),
+    preset('moon-garden', 'Moon Garden', 'nature', true, '#111223', '#f1f0ff', '#c5a2ff', ['#211b38', '#111223', '#34314c'], { artwork: 'theme-moon-garden.svg', motion: 'pulse' }),
+    preset('jade-canopy', 'Jade Canopy', 'nature', true, '#091a18', '#e5fff3', '#63e6a3', ['#10332c', '#091a18', '#195142'], { artwork: 'theme-jade-canopy.svg', motion: 'breathe' }),
+    preset('glacier-veil', 'Glacier Veil', 'nature', true, '#0a1720', '#ebf8ff', '#7ddfff', ['#132b3a', '#0a1720', '#1c4555'], { artwork: 'theme-glacier-veil.svg', motion: 'drift' }),
+    preset('desert-bloom', 'Desert Bloom', 'nature', true, '#21140d', '#fff0dc', '#ffad68', ['#382218', '#21140d', '#5a3522'], { artwork: 'theme-desert-bloom.svg', motion: 'shimmer' }),
+    preset('tidal-forest', 'Tidal Forest', 'nature', true, '#071914', '#e7fff0', '#7be7bd', ['#0f3027', '#071914', '#1e5140'], { artwork: 'theme-tidal-forest.svg', motion: 'wave' }),
+    preset('wildflower-dusk', 'Wildflower Dusk', 'nature', true, '#171326', '#f5efff', '#f59bcb', ['#29203f', '#171326', '#49324e'], { artwork: 'theme-wildflower-dusk.svg', motion: 'breathe' }),
+    preset('8bit-dreamscape', '8-Bit Dreamscape', 'retro', true, '#090f22', '#eef8ff', '#ffd85b', ['#172348', '#090f22', '#342b58'], { artwork: 'theme-8bit-dreamscape.svg', motion: 'pulse' }),
+    preset('cassette-sunset', 'Cassette Sunset', 'retro', true, '#1b1018', '#fff0dc', '#ff9b62', ['#321b2b', '#1b1018', '#4b2930'], { artwork: 'theme-cassette-sunset.svg', motion: 'drift' }),
+    preset('pixel-planet', 'Pixel Planet', 'retro', true, '#080d21', '#edf3ff', '#88a8ff', ['#131d3c', '#080d21', '#2b3159'], { artwork: 'theme-pixel-planet.svg', motion: 'shimmer' }),
+    preset('arcade-rain', 'Arcade Rain', 'retro', true, '#07141a', '#e4fff7', '#55efc4', ['#0d2930', '#07141a', '#12473f'], { artwork: 'theme-arcade-rain.svg', motion: 'wave' }),
+    preset('neon-boardwalk', 'Neon Boardwalk', 'retro', true, '#111024', '#fff0fb', '#ff8bcf', ['#211939', '#111024', '#3b2851'], { artwork: 'theme-neon-boardwalk.svg', motion: 'breathe' }),
+    preset('cloud-garden', 'Cloud Garden', 'pastel', true, '#22213a', '#fff7f3', '#ffafd0', ['#383451', '#22213a', '#514258'], { artwork: 'theme-cloud-garden.svg', motion: 'breathe' }),
+    preset('peony-sky', 'Peony Sky', 'pastel', true, '#1d1830', '#fff4fa', '#ffa8d1', ['#332546', '#1d1830', '#4b3454'], { artwork: 'theme-peony-sky.svg', motion: 'shimmer' }),
+    preset('lavender-coast', 'Lavender Coast', 'pastel', true, '#14192f', '#f1f3ff', '#b9b6ff', ['#24294a', '#14192f', '#394564'], { artwork: 'theme-lavender-coast.svg', motion: 'drift' }),
+    preset('dawn-meadow', 'Dawn Meadow', 'pastel', true, '#201c2a', '#fff5e9', '#ffbd91', ['#393044', '#201c2a', '#50413b'], { artwork: 'theme-dawn-meadow.svg', motion: 'breathe' }),
+    preset('copper-canyon', 'Copper Canyon', 'earth', true, '#20140e', '#f8ecdb', '#e39a62', ['#392318', '#20140e', '#59361f'], { artwork: 'theme-copper-canyon.svg', motion: 'drift' }),
+    preset('mossstone', 'Mossstone', 'earth', true, '#101710', '#eef2dc', '#b6ce73', ['#222a1d', '#101710', '#36452a'], { artwork: 'theme-mossstone.svg', motion: 'breathe' }),
+    preset('amber-atlas', 'Amber Atlas', 'earth', true, '#211909', '#fff2ce', '#f0c36c', ['#3a2910', '#211909', '#574016'], { artwork: 'theme-amber-atlas.svg', motion: 'shimmer' }),
+
     preset('sage', 'Sage', 'pastel', false, '#eef2ea', '#2f3a2c', '#7fa07a', ['#f7faf4', '#eef2ea', '#e3e9dd'], { angle: 120 }),
     preset('blush', 'Blush', 'pastel', false, '#fdeef1', '#4a2b34', '#e2728f', ['#fff7f9', '#fdeef1', '#f7e0e6']),
     preset('powder', 'Powder', 'pastel', false, '#eaf1f8', '#28374a', '#5b87c4', ['#f6fafe', '#eaf1f8', '#dde8f2'], { angle: 115 }),
@@ -311,6 +355,9 @@
   ].map(Object.freeze);
 
   const BY_ID = new Map(PRESETS.map((item) => [item.id, item]));
+  if (PRESETS.filter((item) => item.artwork).length < MIN_ILLUSTRATED_THEMES) {
+    throw new Error('Signature theme catalog is missing illustrated presets');
+  }
   const FROZEN_PRESETS = Object.freeze(PRESETS);
   const FROZEN_CATEGORIES = Object.freeze(CATEGORIES.map((category) => Object.freeze(category)));
 
@@ -400,8 +447,22 @@
   }
 
   function resolve(input) {
-    const p = typeof input === 'string' ? presetById(input) : (input || presetById(DEFAULT_PRESET));
-    const source = p && p.id ? p : presetById(DEFAULT_PRESET);
+    const config = input && typeof input === 'object' ? input : {};
+    const presetId = typeof input === 'string' ? input : (config.themePreset || config.id || DEFAULT_PRESET);
+    const hasCustomFrame = isHex(config.customFrame);
+    const hasCustomBackground = isHex(config.customBackground);
+    const base = presetById(presetId) || presetById(DEFAULT_PRESET);
+    const source = Object.assign({}, base);
+    if (hasCustomBackground) {
+      source.bg = config.customBackground;
+      source.dark = luminance(source.bg) < 0.35;
+      source.ink = contrast('#ffffff', source.bg) >= contrast('#111318', source.bg) ? '#ffffff' : '#111318';
+    }
+    if (isHex(config.customAccent)) source.accent = config.customAccent;
+    if (hasCustomFrame) {
+      source.chrome = null;
+      source.solid = config.customFrame;
+    }
     const ink = source.ink;
     const bg = source.bg;
     const surface = (amount) => mix(bg, ink, amount);
@@ -409,6 +470,7 @@
     const frameLast = source.chrome ? source.chrome[source.chrome.length - 1] : source.solid;
     const frameAccent = source.chrome && source.chrome[1] ? source.chrome[1] : frameBase;
     const pattern = PATTERNS[source.pattern] || null;
+    const artwork = source.artwork && !hasCustomFrame && !hasCustomBackground ? source.artwork : null;
     // Everything below is derived *with legibility as a constraint*, so a
     // hand-picked pastel accent cannot produce an unreadable UI.
     const dim = mutedToward(ink, bg, MUTED_FLOOR.dim);
@@ -423,7 +485,14 @@
     // gradient and the gradient before the flat colour.
     const layers = [];
     if (pattern) layers.push(pattern);
-    if (source.chrome) layers.push(`linear-gradient(${source.angle}deg, ${source.chrome.join(', ')})`);
+    if (artwork) {
+      // Signature artwork replaces (rather than sits under) the opaque palette
+      // gradient. A restrained veil preserves toolbar legibility over details.
+      layers.push('linear-gradient(rgba(3, 7, 12, .44), rgba(3, 7, 12, .44))');
+      layers.push(`url("prism://assets/${source.artwork}")`);
+    } else if (source.chrome) {
+      layers.push(`linear-gradient(${source.angle}deg, ${source.chrome.join(', ')})`);
+    }
     const vars = {
       '--bg': bg,
       '--bg2': surface(SURFACE_STEPS.bg2),
@@ -451,6 +520,13 @@
       '--chrome-accent': chromeAccent,
       '--chrome-gradient': source.chrome ? `linear-gradient(${source.angle}deg, ${source.chrome.join(', ')})` : 'none',
       '--chrome-bg': layers.length ? layers.join(', ') : 'none',
+      '--chrome-background-size': artwork ? '100% 100%, cover' : '220% 220%',
+      '--chrome-artwork': artwork ? `url("prism://assets/${artwork}")` : 'none',
+      '--page-artwork': artwork ? `url("prism://assets/${artwork}")` : 'none',
+      '--cursor-image': root.PrismPixelCursor ? root.PrismPixelCursor.css(accent) : 'auto',
+      '--cursor-pointer-image': root.PrismPixelCursor ? root.PrismPixelCursor.pointer(accent) : 'pointer',
+      '--cursor-icon-image': root.PrismPixelCursor ? root.PrismPixelCursor.icon(accent, 'pointer') : 'none',
+      '--pixel-cursor-stylesheet': root.PrismPixelCursor ? root.PrismPixelCursor.stylesheet(accent) : '',
       // Small tab/omnibox washes that echo the frame without clashing with it.
       '--gradient-a': alpha(frameBase, source.dark ? 0.55 : 0.4),
       '--gradient-b': alpha(frameAccent, source.dark ? 0.35 : 0.22),
@@ -466,6 +542,7 @@
       dark: source.dark,
       motion: source.motion,
       pattern: source.pattern,
+      artwork,
       ink,
       accent,
       bg,
@@ -478,10 +555,18 @@
   function apply(target, appearance) {
     if (!target) return;
     const a = appearance || {};
-    const resolved = resolve(a.themePreset || DEFAULT_PRESET);
+    const resolved = resolve(a);
     const accessibility = a.accessibility || {};
-    const animationThemes = ['basic', 'smooth', 'playful', 'off'];
-    const animationTheme = animationThemes.includes(a.animationTheme) ? a.animationTheme : 'basic';
+    const animationAliases = { basic: 'fluent', smooth: 'fluent', playful: 'spring' };
+    const animationThemes = ['fluent', 'spring', 'arcade', 'minimal', 'off'];
+    const requestedAnimation = animationAliases[a.animationTheme] || a.animationTheme;
+    const animationTheme = animationThemes.includes(requestedAnimation) ? requestedAnimation : 'fluent';
+    const densityOptions = ['compact', 'comfortable', 'spacious'];
+    const density = densityOptions.includes(a.uiDensity) ? a.uiDensity : 'comfortable';
+    const tabStyles = ['rounded', 'pill', 'underline', 'block'];
+    const tabStyle = tabStyles.includes(a.tabStyle) ? a.tabStyle : 'rounded';
+    const uiFonts = ['system', 'rounded', 'mono'];
+    const uiFont = uiFonts.includes(a.uiFont) ? a.uiFont : 'system';
     const vars = Object.assign({}, resolved.vars);
     if (accessibility.contrast === 'high') {
       // High contrast flattens the ramp: every muted value becomes the main
@@ -498,7 +583,20 @@
     target.dataset.theme = resolved.dark ? 'dark' : 'light';
     target.dataset.themePreset = resolved.id;
     target.dataset.motion = resolved.motion;
+    target.dataset.themeArtwork = resolved.artwork ? 'true' : 'false';
+    target.dataset.themeMotion = ['shimmer', 'wave', 'drift', 'breathe', 'pulse'].includes(resolved.motion) ? resolved.motion : 'none';
+    target.dataset.pixelCursor = a.pixelCursor === false ? 'false' : 'true';
     target.dataset.animationTheme = animationTheme;
+    target.dataset.uiDensity = density;
+    target.dataset.tabStyle = tabStyle;
+    target.dataset.uiFont = uiFont;
+    target.style.setProperty('--tab-w', clamp(a.tabWidth, 160, 320, 220) + 'px');
+    const fontStacks = {
+      system: '"Segoe UI", system-ui, sans-serif',
+      rounded: '"Trebuchet MS", "Arial Rounded MT Bold", system-ui, sans-serif',
+      mono: '"Cascadia Code", Consolas, monospace'
+    };
+    target.style.setProperty('--ui-font', fontStacks[uiFont]);
     target.dataset.contrast = accessibility.contrast === 'high' ? 'high' : 'normal';
     target.dataset.largeTargets = accessibility.largerTargets ? 'true' : 'false';
     target.dataset.focusVisible = accessibility.focusIndicators === false ? 'subtle' : 'strong';
@@ -506,6 +604,15 @@
     const reduce = accessibility.reducedMotion || 'system';
     target.dataset.reduceMotion = reduce === 'reduce' ? 'reduce' : reduce === 'no-preference' ? 'allow' : 'system';
   }
+
+  // Coordinated animation packs are shared by Settings, shell chrome and tests.
+  const ANIMATION_PACKS = Object.freeze([
+    Object.freeze({ id: 'fluent', name: 'Fluent', description: 'Soft and polished' }),
+    Object.freeze({ id: 'spring', name: 'Spring', description: 'Lively with gentle bounce' }),
+    Object.freeze({ id: 'arcade', name: 'Arcade', description: 'Crisp, graphic transitions' }),
+    Object.freeze({ id: 'minimal', name: 'Minimal', description: 'Quiet fades' }),
+    Object.freeze({ id: 'off', name: 'Off', description: 'No animation' })
+  ]);
 
   // "Surprise me" now jumps to another curated theme instead of inventing a
   // gradient, so a random pick is still a palette somebody designed.
@@ -525,6 +632,7 @@
     CATEGORIES: FROZEN_CATEGORIES,
     PATTERNS: Object.freeze(Object.assign({}, PATTERNS)),
     MOTIONS: Object.freeze(MOTIONS.slice()),
+    ANIMATION_PACKS,
     DEFAULT_PRESET,
     preset: presetById,
     presetsIn,
@@ -537,4 +645,6 @@
     luminance,
     isHex
   });
-})(window);
+})(typeof window !== 'undefined' ? window : globalThis);
+
+if (typeof module !== 'undefined' && module.exports) module.exports = globalThis.PrismTheme;

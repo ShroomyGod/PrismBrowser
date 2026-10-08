@@ -14,6 +14,11 @@
 const path = require('path');
 const { parentPort, workerData } = require('worker_threads');
 const tasks = require('./tasks');
+const os = require('os');
+const CPU_THREADS = Math.max(1, Math.min(4, typeof os.availableParallelism === 'function'
+  ? os.availableParallelism()
+  : os.cpus().length));
+const CPU_SESSION_OPTIONS = { intraOpNumThreads: CPU_THREADS, interOpNumThreads: 1 };
 
 // Loaded lazily on the first job. Requiring transformers.js at module scope
 // costs ~100ms and pulls in sharp, which is wasted if the user never uses AI.
@@ -57,7 +62,9 @@ async function ensureVision() {
     const spec = tasks.VISION_MODELS;
     progress({ stage: 'loading', model: spec.label, detail: 'SmolVLM-256M' });
     const [model, processor] = await Promise.all([
-      t.SmolVLMForConditionalGeneration.from_pretrained(spec.id, { dtype: spec.dtype }),
+      t.SmolVLMForConditionalGeneration.from_pretrained(spec.id, {
+        dtype: spec.dtype, session_options: CPU_SESSION_OPTIONS
+      }),
       t.AutoProcessor.from_pretrained(spec.id)
     ]);
     vision = { model, processor };
@@ -79,7 +86,9 @@ async function ensureText() {
     const spec = tasks.TEXT_MODELS;
     progress({ stage: 'loading', model: spec.label, detail: 'SmolLM-135M' });
     const [model, tokenizer] = await Promise.all([
-      t.AutoModelForCausalLM.from_pretrained(spec.id, { dtype: spec.dtype }),
+      t.AutoModelForCausalLM.from_pretrained(spec.id, {
+        dtype: spec.dtype, session_options: CPU_SESSION_OPTIONS
+      }),
       t.AutoTokenizer.from_pretrained(spec.id)
     ]);
     text = { model, tokenizer };
@@ -143,7 +152,9 @@ async function ensureTranslation() {
     const spec = tasks.TRANSLATION_MODEL;
     progress({ stage: 'loading', model: spec.label, detail: 'M2M100 ONNX · 100 languages' });
     const [model, tokenizer] = await Promise.all([
-      t.AutoModelForSeq2SeqLM.from_pretrained(spec.id, { dtype: spec.dtype }),
+      t.AutoModelForSeq2SeqLM.from_pretrained(spec.id, {
+        dtype: spec.dtype, session_options: CPU_SESSION_OPTIONS
+      }),
       t.AutoTokenizer.from_pretrained(spec.id)
     ]);
     translation = { model, tokenizer };
